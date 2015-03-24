@@ -1,9 +1,0 @@
-name: alc
-version: 0.0.1
-description: A try to recreate the landing computer from Alien.
-dependencies:
-  html: any
-  math: any
-  three:
-    path: ../../Externals/three.dart
-  vector_math: any
