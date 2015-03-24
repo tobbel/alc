@@ -2,6 +2,7 @@ name: alc
 version: 0.0.1
 description: A try to recreate the landing computer from Alien.
 dependencies:
+  browser: any
   html: any
   math: any
   three:
