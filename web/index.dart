@@ -52,6 +52,14 @@ class LineSegment {
   // Might as well use Vector3s to get depth, this is just easier to work with for now
   int depth;
   bool visible = true;
+  
+  // Assumes point is on line
+  List<LineSegment> split(Vector2 position) {
+    List<LineSegment> newLines = new List<LineSegment>();
+    newLines.add(new LineSegment(this.start, position));
+    newLines.add(new LineSegment(position, this.end));
+    return newLines;
+  }
 }
 
 class LineGroup {
@@ -59,6 +67,8 @@ class LineGroup {
   void add(LineSegment line) => Line.add(line);
   num get length => Line.length;
   LineSegment operator [](int index) => Line[index];
+  void insert(int index, LineSegment line) => Line.insert(index, line);
+  LineSegment removeAt(int index) => Line.removeAt(index);
 }
 
 List<LineGroup> Lines = new List<LineGroup>();
@@ -80,15 +90,37 @@ void calculateLines() {
   // Of those two lines, second line will not be drawn.
   // Until another line segment in new line intersects, all will be marked as hidden.
   // On next intersection, split lines and hide first of the two new lines.
-  //Lines.add(b);
+  
+  // Manual intersection points - first line
+  Vector2 intersection = new Vector2(-1.0, 0.0);
+  // Split and replace
+  List<LineSegment> split = a[0].split(intersection);
+  a.removeAt(0);
+  a.insert(0, split[0]);
+  a.insert(1, split[1]);
+  //a[0].visible = false;
+  //a[1].visible = false;
+  
+  split = b[0].split(intersection);
+  b.removeAt(0);
+  b.insert(0, split[0]);
+  b.insert(1, split[1]);
+  
+  // Hide second part of second line
+  b[1].visible = false;
+  
+  Lines.add(b);
 }
 
 void drawLineSegments() {
   for (int i = 0; i < Lines.length; i++) {
-    var material = new LineBasicMaterial(linewidth: 100.0, color: 0x0077dd);
+    var material = new LineBasicMaterial(linewidth: 100.0, color: (i == 0 ? 0x0077dd : 0xff0000));
     var geometry = new Geometry();
     for (int j = 0; j < Lines[i].length; j++) {
       LineSegment line = Lines[i][j];
+      if (line.visible == false) {
+        continue;
+      }
       // TODO: Negate y here?
       geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
       geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
