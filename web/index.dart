@@ -53,20 +53,42 @@ class LineSegment {
   int depth;
 }
 
-List<List<LineSegment>> Lines = new List<List<LineSegment>>();
-List<LineSegment> Horizon = new List<LineSegment>();
+class LineGroup {
+  List<LineSegment> Line = new List<LineSegment>();
+  void add(LineSegment line) => Line.add(line);
+  num get length => Line.length;
+  LineSegment operator [](int index) => Line[index];
+}
+
+List<LineGroup> Lines = new List<LineGroup>();
+LineGroup Horizon = new LineGroup();
 void calculateLines() {
   // Start w/ two lines - set up manually
-  List<LineSegment> a = new List<LineSegment>();
+  LineGroup a = new LineGroup();
   a.add(new LineSegment(new Vector2(-2.0, 1.0), new Vector2(0.0, -1.0)));
   a.add(new LineSegment(new Vector2(0.0, -1.0), new Vector2(2.0, 1.0)));
   Lines.add(a);
   Horizon = a;
   
-  List<LineSegment> b = new List<LineSegment>();
+  LineGroup b = new LineGroup();
   b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
   b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
   Lines.add(b);
+}
+
+void drawLineSegments() {
+  for (int i = 0; i < Lines.length; i++) {
+    var material = new LineBasicMaterial(linewidth: 100.0, color: 0x0077dd);
+    var geometry = new Geometry();
+    for (int j = 0; j < Lines[i].length; j++) {
+      LineSegment line = Lines[i][j];
+      // TODO: Negate y here?
+      geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
+      geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
+    }
+    var line = new Line(geometry, material);
+    scene.add(line);
+  }
 }
 
 void drawTriangles() {
@@ -102,22 +124,6 @@ void drawTriangles() {
   
   mesh = new Mesh(geometry, material);
   scene.add(mesh);
-}
-
-void drawLineSegments() {
-  for (int i = 0; i < Lines.length; i++) {
-    var material = new LineBasicMaterial(linewidth: 100.0, color: 0x0077dd);
-    var geometry = new Geometry();
-    for (int j = 0; j < Lines[i].length; j++) {
-      LineSegment line = Lines[i][j];
-      // TODO: Negate y here?
-      print('adding a line');
-      geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
-      geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
-    }
-    var line = new Line(geometry, material);
-    scene.add(line);
-  }
 }
 
 void drawLines() {
