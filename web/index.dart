@@ -26,7 +26,9 @@ void init() {
   
   scene.add(camera);
   
-  drawTriangles();
+  calculateLines();
+  drawLineSegments();
+  //drawTriangles();
   //drawLines();
 
   renderer = new WebGLRenderer();
@@ -40,6 +42,31 @@ void render(double dt) {
 
   camera.lookAt(new Vector3(0.0, 0.0, 0.0));
   renderer.render(scene, camera);
+}
+
+// TODO: LineSegment?
+class LineSegment {
+  Vector2 start;
+  Vector2 end;
+  LineSegment(this.start, this.end);
+  // Might as well use Vector3s to get depth, this is just easier to work with for now
+  int depth;
+}
+
+List<List<LineSegment>> Lines = new List<List<LineSegment>>();
+List<LineSegment> Horizon = new List<LineSegment>();
+void calculateLines() {
+  // Start w/ two lines - set up manually
+  List<LineSegment> a = new List<LineSegment>();
+  a.add(new LineSegment(new Vector2(-2.0, 1.0), new Vector2(0.0, -1.0)));
+  a.add(new LineSegment(new Vector2(0.0, -1.0), new Vector2(2.0, 1.0)));
+  Lines.add(a);
+  Horizon = a;
+  
+  List<LineSegment> b = new List<LineSegment>();
+  b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
+  b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
+  Lines.add(b);
 }
 
 void drawTriangles() {
@@ -75,6 +102,22 @@ void drawTriangles() {
   
   mesh = new Mesh(geometry, material);
   scene.add(mesh);
+}
+
+void drawLineSegments() {
+  for (int i = 0; i < Lines.length; i++) {
+    var material = new LineBasicMaterial(linewidth: 100.0, color: 0x0077dd);
+    var geometry = new Geometry();
+    for (int j = 0; j < Lines[i].length; j++) {
+      LineSegment line = Lines[i][j];
+      // TODO: Negate y here?
+      print('adding a line');
+      geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
+      geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
+    }
+    var line = new Line(geometry, material);
+    scene.add(line);
+  }
 }
 
 void drawLines() {
