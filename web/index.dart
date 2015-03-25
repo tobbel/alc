@@ -51,6 +51,7 @@ class LineSegment {
   LineSegment(this.start, this.end);
   // Might as well use Vector3s to get depth, this is just easier to work with for now
   int depth;
+  bool visible = true;
 }
 
 class LineGroup {
@@ -73,7 +74,13 @@ void calculateLines() {
   LineGroup b = new LineGroup();
   b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
   b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
-  Lines.add(b);
+  
+  // Check for all intersection points.
+  // On intersect, remove line and add two new lines with start/end at intersect position.
+  // Of those two lines, second line will not be drawn.
+  // Until another line segment in new line intersects, all will be marked as hidden.
+  // On next intersection, split lines and hide first of the two new lines.
+  //Lines.add(b);
 }
 
 void drawLineSegments() {
