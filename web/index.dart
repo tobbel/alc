@@ -131,6 +131,23 @@ Vector2 intersects(LineSegment a, LineSegment b) {
   return null;
 }
 
+List<LineSegment> getPossibleIntersectors(LineSegment line, int parentIndex) {
+  List<LineSegment> possibleIntersectors = new List<LineSegment>();
+  for (int i = 0; i < Lines.length; i++) {
+    if (i == parentIndex)
+      continue;
+    LineGroup lineGroup = Lines[i];
+    for (int j = 0; j < lineGroup.length; j++) {
+      LineSegment lineSegment = lineGroup[j];
+      if (lineSegment.start.x <= line.start.x && lineSegment.end.x >= line.start.x ||
+          lineSegment.start.x >= line.start.x && lineSegment.start.x <= line.end.x) {
+        possibleIntersectors.add(lineSegment);
+      }
+    }
+  }
+  return possibleIntersectors;
+}
+
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
@@ -151,8 +168,15 @@ void calculateLines() {
   // Until another line segment in new line intersects, all will be marked as hidden.
   // On next intersection, split lines and hide first of the two new lines.
   
-  // Manual intersection points - first line
-  //Vector2 intersection = new Vector2(-1.0, 0.0);
+  // Iteration first try
+  for (LineGroup lineGroup in Lines) {
+    // TODO: Iterable?
+    for (LineSegment line in lineGroup.Line) {
+      // Get all other lines which start before and end after this one
+      List<LineSegment> possibleIntersectors = getPossibleIntersectors(line, Lines.indexOf(lineGroup));
+      print('Number of possibles: ' + possibleIntersectors.length.toString());
+    }
+  }
   
   // TODO: Iteration
   Vector2 intersectionPoint = intersects(a[0], b[0]);
