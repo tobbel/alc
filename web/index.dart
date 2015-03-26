@@ -145,48 +145,48 @@ void calculateLines() {
   b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
   b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
   Lines.add(b);
-  
-  // Check for all intersection points.
-  Vector2 intersectionPoint = intersects(a[0], b[0]);
-  if (intersectionPoint != null)
-  {
-    print('Intersection point: ' + intersectionPoint.toString());
-  }
+
   // On intersect, remove line and add two new lines with start/end at intersect position.
   // Of those two lines, second line will not be drawn.
   // Until another line segment in new line intersects, all will be marked as hidden.
   // On next intersection, split lines and hide first of the two new lines.
   
   // Manual intersection points - first line
-  Vector2 intersection = new Vector2(-1.0, 0.0);
-  // Split and replace
-  List<LineSegment> split = a[0].split(intersection);
-  a.removeAt(0);
-  a.insert(0, split[0]);
-  a.insert(1, split[1]);
+  //Vector2 intersection = new Vector2(-1.0, 0.0);
   
-  split = b[0].split(intersection);
-  print('Split line ${b[0]} intersecting at ${intersection.toString()} into ${split[0]} and ${split[1]}');
-  b.removeAt(0);
-  b.insert(0, split[0]);
-  b.insert(1, split[1]);
+  // TODO: Iteration
+  Vector2 intersectionPoint = intersects(a[0], b[0]);
+  if (intersectionPoint != null)
+  {
+    // Split and replace
+    List<LineSegment> split = a[0].split(intersectionPoint);
+    a.removeAt(0);
+    a.insert(0, split[0]);
+    a.insert(1, split[1]);
+    
+    split = b[0].split(intersectionPoint);
+    b.removeAt(0);
+    b.insert(0, split[0]);
+    b.insert(1, split[1]);
+    
+    // Hide second part of second line
+    b[1].visible = false;
+    print(b.toString());
+  }
   
-  // Hide second part of second line
-  b[1].visible = false;
-  print(b.toString());
-  
-  // Intersection 2
-  intersection = new Vector2(1.0, 0.0);
-  split = a[2].split(intersection);
-  a.removeAt(2);
-  a.insert(2, split[0]);
-  a.insert(3, split[1]);
-  
-  split = b[2].split(intersection);
-  b.removeAt(2);
-  b.insert(2, split[0]);
-  b.insert(3, split[1]);
-  b[2].visible = false;
+  intersectionPoint = intersects(a[1], b[1]);
+  if (intersectionPoint != null) {
+    List<LineSegment> split = a[2].split(intersectionPoint);
+    a.removeAt(2);
+    a.insert(2, split[0]);
+    a.insert(3, split[1]);
+    
+    split = b[2].split(intersectionPoint);
+    b.removeAt(2);
+    b.insert(2, split[0]);
+    b.insert(3, split[1]);
+    b[2].visible = false;
+  }
 }
 
 void drawLineSegments() {
