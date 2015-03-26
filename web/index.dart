@@ -81,6 +81,56 @@ class LineGroup {
   }
 }
 
+Vector2 intersects(LineSegment a, LineSegment b) {
+  /// u = (q − p) × r / (r × s)
+  Vector2 qmp = b.start - a.start;
+  Vector2 pmq = a.start - b.start;
+  Vector2 r = a.end - a.start;
+  Vector2 s = b.end - b.start;
+  double qmpxr = qmp.cross(r);
+  double qmpxs = qmp.cross(s);
+  double rxs = r.cross(s);
+
+  //If r × s = 0 and (q − p) × r = 0, then the two lines are collinear. 
+  if (rxs == 0 && qmpxr == 0) {
+    //If in addition, either 0 ≤ (q − p) * r ≤ r * r or 0 ≤ (p − q) * s ≤ s * s, then the two lines are overlapping.
+    if ((qmp.dot(r) >= 0 && qmp.dot(r) <= r.dot(r)) ||
+         pmq.dot(s) >= 0 && pmq.dot(s) <= s.dot(s)) {
+      // Overlapping - handle
+      return null;
+    }
+    // Colinear - but don't collide
+    return null;
+  }
+  
+  //If r × s = 0 and (q − p) × r = 0, but neither 0 ≤ (q − p) · r ≤ r · r nor 0 ≤ (p − q) · s ≤ s · s, then the two lines are collinear but disjoint.
+  if (rxs == 0 && qmpxr == 0) {
+    
+  }
+  
+  //If r × s = 0 and (q − p) × r ≠ 0, then the two lines are parallel and non-intersecting.
+  if (rxs == 0 && qmpxr != 0) {
+    return null;
+  }
+  
+  //If r × s ≠ 0 and 0 ≤ t ≤ 1 and 0 ≤ u ≤ 1, the two line segments meet at the point p + t r = q + u s.
+  if (rxs != 0) {
+    // Calculate t and u
+    var t = qmpxs / rxs;
+    if (t < 0 || t > 1)
+      return null;
+        
+    var u = qmpxr / rxs;
+    if (u < 0 || u > 1)
+      return null;
+    
+    return a.start + r * t;
+  }
+  
+  //Otherwise, the two line segments are not parallel but do not intersect.
+  return null;
+}
+
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
@@ -97,6 +147,11 @@ void calculateLines() {
   Lines.add(b);
   
   // Check for all intersection points.
+  Vector2 intersectionPoint = intersects(a[0], b[0]);
+  if (intersectionPoint != null)
+  {
+    print('Intersection point: ' + intersectionPoint.toString());
+  }
   // On intersect, remove line and add two new lines with start/end at intersect position.
   // Of those two lines, second line will not be drawn.
   // Until another line segment in new line intersects, all will be marked as hidden.
