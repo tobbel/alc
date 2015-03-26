@@ -60,6 +60,8 @@ class LineSegment {
     newLines.add(new LineSegment(position, this.end));
     return newLines;
   }
+  
+  toString() => "($start; $end)";
 }
 
 class LineGroup {
@@ -69,6 +71,14 @@ class LineGroup {
   LineSegment operator [](int index) => Line[index];
   void insert(int index, LineSegment line) => Line.insert(index, line);
   LineSegment removeAt(int index) => Line.removeAt(index);
+  
+  String toString() {
+    String out = "";
+    for (LineSegment line in Line) {
+      out += line.toString() + " (" + (line.visible ? "visible" : "not visible") + ")";
+    }
+    return out;
+  }
 }
 
 List<LineGroup> Lines = new List<LineGroup>();
@@ -101,14 +111,15 @@ void calculateLines() {
   //a[0].visible = false;
   //a[1].visible = false;
   
-  split = b[0].split(intersection);
+  List<LineSegment> split2 = b[0].split(intersection);
+  print('Split line ${b[0]} intersecting at ${intersection.toString()} into ${split2[0]} and ${split2[1]}');
   b.removeAt(0);
-  b.insert(0, split[0]);
-  b.insert(1, split[1]);
+  b.insert(0, split2[0]);
+  b.insert(1, split2[1]);
   
   // Hide second part of second line
   b[1].visible = false;
-  
+  print(b.toString());
   Lines.add(b);
 }
 
@@ -116,14 +127,16 @@ void drawLineSegments() {
   for (int i = 0; i < Lines.length; i++) {
     var material = new LineBasicMaterial(linewidth: 100.0, color: (i == 0 ? 0x0077dd : 0xff0000));
     var geometry = new Geometry();
-    for (int j = 0; j < Lines[i].length; j++) {
+    for (int j = 0; j < Lines[i].length - 1; j++) {
       LineSegment line = Lines[i][j];
-      if (line.visible == false) {
-        continue;
+      if (line.visible) {
+        // TODO: Negate y here?
+        geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
+        geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
+        print('Line ${line.toString()} is visible');
+      } else {
+        print('Line ${line.toString()} is not visible');
       }
-      // TODO: Negate y here?
-      geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
-      geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
     }
     var line = new Line(geometry, material);
     scene.add(line);
