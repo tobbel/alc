@@ -174,9 +174,9 @@ void calculateLines() {
     print(b.toString());
   }
   
-  intersectionPoint = intersects(a[1], b[1]);
+  intersectionPoint = intersects(a[2], b[2]);
   if (intersectionPoint != null) {
-    List<LineSegment> split = a[2].split(intersectionPoint);
+    var split = a[2].split(intersectionPoint);
     a.removeAt(2);
     a.insert(2, split[0]);
     a.insert(3, split[1]);
