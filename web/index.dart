@@ -108,8 +108,6 @@ void calculateLines() {
   a.removeAt(0);
   a.insert(0, split[0]);
   a.insert(1, split[1]);
-  //a[0].visible = false;
-  //a[1].visible = false;
   
   List<LineSegment> split2 = b[0].split(intersection);
   print('Split line ${b[0]} intersecting at ${intersection.toString()} into ${split2[0]} and ${split2[1]}');
@@ -127,17 +125,27 @@ void drawLineSegments() {
   for (int i = 0; i < Lines.length; i++) {
     var material = new LineBasicMaterial(linewidth: 100.0, color: (i == 0 ? 0x0077dd : 0xff0000));
     var geometry = new Geometry();
-    for (int j = 0; j < Lines[i].length - 1; j++) {
-      LineSegment line = Lines[i][j];
+    bool done = false;
+    int counter = 0;
+    
+    // TODO: Support for invisible lines at end of line group
+    while (!done) {
+      // Out at end of line group
+      if (counter >= Lines[i].length)
+        break;
+      
+      LineSegment line = Lines[i][counter];
       if (line.visible) {
-        // TODO: Negate y here?
         geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
         geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
-        print('Line ${line.toString()} is visible');
       } else {
-        print('Line ${line.toString()} is not visible');
+        var line = new Line(geometry, material);
+        scene.add(line);
+        geometry = new Geometry();
       }
+      counter++;
     }
+
     var line = new Line(geometry, material);
     scene.add(line);
   }
