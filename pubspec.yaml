@@ -7,4 +7,3 @@ dependencies:
   math: any
   three:
     path: ../../Externals/three.dart
-  vector_math: any
