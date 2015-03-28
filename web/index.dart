@@ -160,6 +160,18 @@ List<LineSegment> getPossibleIntersectors(LineSegment line, int parentIndex) {
   return possibleIntersectors;
 }
 
+List<LineSegment> getPossibleIntersectorsWithHorizon(LineSegment line) {
+  List<LineSegment> possibleIntersectors = new List<LineSegment>();
+  for (int i = 0; i < Horizon.length; i++) {
+    LineSegment horizonSegment = Horizon[i];
+    if (horizonSegment.start.x <= line.start.x && horizonSegment.end.x >= line.start.x ||
+        horizonSegment.start.x >= line.start.x && horizonSegment.start.x <= line.end.x) {
+      possibleIntersectors.add(horizonSegment);
+    }
+  }
+  return possibleIntersectors;
+}
+
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
@@ -194,23 +206,34 @@ void calculateLines() {
   // Until another line segment in new line intersects, all will be marked as hidden.
   // On next intersection, split lines and hide first of the two new lines.
   
-  // Iteration first try
-  for (LineGroup lineGroup in Lines) {
-    // TODO: Iterable?
-    // TODO: We don't need to check against all other lines, only horizon.
-    for (LineSegment line in lineGroup.Line) {
-      // Get all other lines which start before and end after this one
-      List<LineSegment> possibleIntersectors = getPossibleIntersectors(line, Lines.indexOf(lineGroup));
-      print('Number of possibles: ' + possibleIntersectors.length.toString());
-      for (LineSegment intersector in possibleIntersectors) {
-        Vector2 intersectionPoint = intersects(line, intersector);
-        if (intersectionPoint != null) {
-          intersectionPoints.add(intersectionPoint);
-        }
+  // Compare with horizon
+  for (LineSegment line in b.Line) {
+    List<LineSegment> possibleIntersectors = getPossibleIntersectorsWithHorizon(line);
+    for (LineSegment intersector in possibleIntersectors) {
+      Vector2 intersectionPoint = intersects(line, intersector);
+      if (intersectionPoint != null) {
+        intersectionPoints.add(intersectionPoint);
       }
     }
-    
   }
+  
+  // Iteration first try
+//  for (LineGroup lineGroup in Lines) {
+//    // TODO: Iterable?
+//    // TODO: We don't need to check against all other lines, only horizon.
+//    for (LineSegment line in lineGroup.Line) {
+//      // Get all other lines which start before and end after this one
+//      List<LineSegment> possibleIntersectors = getPossibleIntersectors(line, Lines.indexOf(lineGroup));
+//      print('Number of possibles: ' + possibleIntersectors.length.toString());
+//      for (LineSegment intersector in possibleIntersectors) {
+//        Vector2 intersectionPoint = intersects(line, intersector);
+//        if (intersectionPoint != null) {
+//          intersectionPoints.add(intersectionPoint);
+//        }
+//      }
+//    }
+//    
+//  }
   
   // TODO: Iteration
 //  Vector2 intersectionPoint = intersects(a[0], b[0]);
