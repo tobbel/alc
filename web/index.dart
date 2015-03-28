@@ -197,6 +197,7 @@ void calculateLines() {
   // Iteration first try
   for (LineGroup lineGroup in Lines) {
     // TODO: Iterable?
+    // TODO: We don't need to check against all other lines, only horizon.
     for (LineSegment line in lineGroup.Line) {
       // Get all other lines which start before and end after this one
       List<LineSegment> possibleIntersectors = getPossibleIntersectors(line, Lines.indexOf(lineGroup));
