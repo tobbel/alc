@@ -66,6 +66,7 @@ class LineSegment {
   bool intersects = false;
   
   // Assumes point is on line
+  // TODO: Consider split replacing lines as well
   List<LineSegment> split(Vector2 position) {
     List<LineSegment> newLines = new List<LineSegment>();
     newLines.add(new LineSegment(this.start, position));
@@ -209,10 +210,24 @@ void calculateLines() {
   // Compare with horizon
   for (LineSegment line in b.Line) {
     List<LineSegment> possibleIntersectors = getPossibleIntersectorsWithHorizon(line);
+    // TODO: Break and redo after intersection and split
     for (LineSegment intersector in possibleIntersectors) {
       Vector2 intersectionPoint = intersects(line, intersector);
       if (intersectionPoint != null) {
         intersectionPoints.add(intersectionPoint);
+        // New line has intersected with horizon
+        // Determine if line should be visible or hidden: compare y of start points
+        bool aboveHorizon = line.start.y > intersector.start.y;
+        
+        // If line start is above horizon start, line should be visible and replace horizon line
+        if (aboveHorizon) {
+          List<LineSegment> split = line.split(intersectionPoint);
+          List<LineSegment> horizonSplit = line.split(intersectionPoint);
+        } else { // If line start is below horizon start, line should be invisible. 
+          
+        }
+        
+        
       }
     }
   }
@@ -278,6 +293,7 @@ void drawLineSegments() {
     int counter = 0;
     
     // TODO: Support for invisible lines at end of line group
+    // TODO: Consider using LinePieces (GL_LINES) instead of default LineStrip (GL_LINE_STRIP) (might simplify line removal etc.)
     while (!done) {
       // Out at end of line group
       if (counter >= Lines[i].length)
