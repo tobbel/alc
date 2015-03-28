@@ -256,7 +256,7 @@ void calculateLines() {
       } else {
         // If line has no intersections, entire line should be visible or invisible. Determine which.
         bool aboveHorizon = line.start.y > intersector.start.y;
-        if (aboveHorizon) {
+        if (!aboveHorizon) {
           line.hidden = true;
         } else {
           
