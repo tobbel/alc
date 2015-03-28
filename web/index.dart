@@ -11,6 +11,8 @@ WebGLRenderer renderer;
 
 Mesh mesh;
 
+bool hideTest = true;
+
 void main() {
   init();
   render(0.0);
@@ -28,8 +30,6 @@ void init() {
   
   calculateLines();
   drawLineSegments();
-  //drawTriangles();
-  //drawLines();
   
   for (Vector2 intersectionPoint in intersectionPoints) {
     var material = new MeshBasicMaterial(color: 0x00ff00);
@@ -62,7 +62,7 @@ class LineSegment {
   LineSegment(this.start, this.end);
   // Might as well use Vector3s to get depth, this is just easier to work with for now
   int depth;
-  bool visible = true;
+  bool hidden = false;
   bool intersects = false;
   
   // Assumes point is on line
@@ -88,9 +88,20 @@ class LineGroup {
   String toString() {
     String out = "";
     for (LineSegment line in Line) {
-      out += line.toString() + " (" + (line.visible ? "visible" : "not visible") + ")";
+      out += line.toString() + " (" + (line.hidden ? "hidden" : "visible") + ")";
     }
     return out;
+  }
+  
+  List<LineSegment> split(LineSegment line, Vector2 intersectionPoint) {
+    int index = Line.indexOf(line);
+    List<LineSegment> splitLines = line.split(intersectionPoint);
+    
+    // TODO: Remove helper functions if this is the only place they're used
+    removeAt(index);
+    insert(index, splitLines[0]);
+    insert(index + 1, splitLines[1]);
+    return splitLines;
   }
 }
 
@@ -176,7 +187,7 @@ List<LineSegment> getPossibleIntersectorsWithHorizon(LineSegment line) {
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
-  const int lineCount = 10;
+  const int lineCount = 3;
   Math.Random rand = new Math.Random();
   // Start w/ two lines - set up manually
   LineGroup a = new LineGroup();
@@ -208,7 +219,10 @@ void calculateLines() {
   // On next intersection, split lines and hide first of the two new lines.
   
   // Compare with horizon
-  for (LineSegment line in b.Line) {
+  //for (LineSegment line in b.Line) {
+  for (int i = 0; i < b.Line.length; i++) {
+    if (i > 50) break;
+    LineSegment line = b.Line[i];
     List<LineSegment> possibleIntersectors = getPossibleIntersectorsWithHorizon(line);
     // TODO: Break and redo after intersection and split
     for (LineSegment intersector in possibleIntersectors) {
@@ -219,75 +233,32 @@ void calculateLines() {
         // Determine if line should be visible or hidden: compare y of start points
         bool aboveHorizon = line.start.y > intersector.start.y;
         
+        List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
+        //List<LineSegment> horizonSplitLines = Horizon.split(intersector, intersectionPoint);
+
+          //List<LineSegment> split = line.split(intersectionPoint);
+          //List<LineSegment> horizonSplit = line.split(intersectionPoint);
         // If line start is above horizon start, line should be visible and replace horizon line
         if (aboveHorizon) {
-          List<LineSegment> split = line.split(intersectionPoint);
-          List<LineSegment> horizonSplit = line.split(intersectionPoint);
+          newSplitLines[0].hidden = true;
         } else { // If line start is below horizon start, line should be invisible. 
-          
+          newSplitLines[1].hidden = true;
         }
-        
-        
+      } else {
+        // If line has no intersections, entire line should be visible or invisible. Determine which.
+        bool aboveHorizon = line.start.y > intersector.start.y;
+        if (aboveHorizon) {
+          line.hidden = true;
+        } else {
+        }
       }
     }
   }
-  
-  // Iteration first try
-//  for (LineGroup lineGroup in Lines) {
-//    // TODO: Iterable?
-//    // TODO: We don't need to check against all other lines, only horizon.
-//    for (LineSegment line in lineGroup.Line) {
-//      // Get all other lines which start before and end after this one
-//      List<LineSegment> possibleIntersectors = getPossibleIntersectors(line, Lines.indexOf(lineGroup));
-//      print('Number of possibles: ' + possibleIntersectors.length.toString());
-//      for (LineSegment intersector in possibleIntersectors) {
-//        Vector2 intersectionPoint = intersects(line, intersector);
-//        if (intersectionPoint != null) {
-//          intersectionPoints.add(intersectionPoint);
-//        }
-//      }
-//    }
-//    
-//  }
-  
-  // TODO: Iteration
-//  Vector2 intersectionPoint = intersects(a[0], b[0]);
-//  if (intersectionPoint != null)
-//  {
-//    // Split and replace
-//    List<LineSegment> split = a[0].split(intersectionPoint);
-//    a.removeAt(0);
-//    a.insert(0, split[0]);
-//    a.insert(1, split[1]);
-//    
-//    split = b[0].split(intersectionPoint);
-//    b.removeAt(0);
-//    b.insert(0, split[0]);
-//    b.insert(1, split[1]);
-//    
-//    // Hide second part of second line
-//    b[1].visible = false;
-//    print(b.toString());
-//  }
-//  
-//  intersectionPoint = intersects(a[2], b[2]);
-//  if (intersectionPoint != null) {
-//    var split = a[2].split(intersectionPoint);
-//    a.removeAt(2);
-//    a.insert(2, split[0]);
-//    a.insert(3, split[1]);
-//    
-//    split = b[2].split(intersectionPoint);
-//    b.removeAt(2);
-//    b.insert(2, split[0]);
-//    b.insert(3, split[1]);
-//    b[2].visible = false;
-//  }
 }
 
 void drawLineSegments() {
   for (int i = 0; i < Lines.length; i++) {
-    var material = new LineBasicMaterial(linewidth: 100.0, color: (i == 0 ? 0x0077dd : 0xff0000));
+    var material = new LineBasicMaterial(linewidth: 100.0, color: (i == 0 ? 0xff0000 : 0x0077dd));
     var geometry = new Geometry();
     bool done = false;
     int counter = 0;
@@ -300,13 +271,18 @@ void drawLineSegments() {
         break;
       
       LineSegment line = Lines[i][counter];
-      if (line.visible) {
+      if (!hideTest) {
         geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
         geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
       } else {
-        var line = new Line(geometry, material);
-        scene.add(line);
-        geometry = new Geometry();
+        if (!line.hidden) {
+          geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
+          geometry.vertices.add(new Vector3(line.end.x, line.end.y, 0.0));
+        } else {
+          var line = new Line(geometry, material);
+          scene.add(line);
+          geometry = new Geometry();
+        } 
       }
       counter++;
     }
@@ -314,73 +290,4 @@ void drawLineSegments() {
     var line = new Line(geometry, material);
     scene.add(line);
   }
-}
-
-void drawTriangles() {
-
-  // Triangle test
-  var geometry = new Geometry();
-  
-  int numIterations = 8;
-  double xModifier = 20.0 / numIterations;
-  Math.Random rand = new Math.Random();
-  geometry.vertices.add(new Vector3(-10.0, -2.0, 1.0));
-  for (int i = 0; i < numIterations + 1; i++) {
-    // start at -10, go to 10
-    // 0 to 20
-    double x = -10.0 + i * xModifier;
-    double y = Math.sin(i.toDouble());
-    y = rand.nextDouble() * 2.0;
-    double z = 1.0;
-    geometry.vertices.add(new Vector3(x, y, z));
-  }
-  
-  for (int i = 0; i < numIterations; i+= 2) {
-    geometry.faces.add(new Face4(i, i + 1, i + 2, 0));
-    print("added face " + i.toString() + ", " + (i + 1).toString() + ", " + (i + 2).toString());
-  }
-  
-//  geometry.vertices.add(new Vector3(1.0, 0.0, 0.0));
-//  geometry.vertices.add(new Vector3(1.0, 1.0, 0.0));
-//  geometry.vertices.add(new Vector3(0.0, 0.0, 0.0));
-//  geometry.faces.add(new Face3(0, 1, 2));
-  
-  var material = new MeshLambertMaterial(color: 0xcc0000);
-  
-  mesh = new Mesh(geometry, material);
-  scene.add(mesh);
-}
-
-void drawLines() {
-  var material = new LineBasicMaterial(linewidth: 100.0, color: 0x0077dd);
-  var geometry = new Geometry();
-  int numIterations = 100;
-  double xModifier = 20.0 / numIterations;
-  Math.Random rand = new Math.Random();
-  for (int i = 0; i < numIterations; i++) {
-    // start at -10, go to 10
-    // 0 to 20
-    double x = -10.0 + i * xModifier;
-    double y = Math.sin(i.toDouble());
-    y = rand.nextDouble() * 2.0;
-    double z = 1.0;
-    geometry.vertices.add(new Vector3(x, y, z));
-  }
-
-  var line = new Line(geometry, material);
-  scene.add(line);
-  
-  geometry = new Geometry();
-  for (int i = 0; i < numIterations; i++) {
-    // start at -10, go to 10
-    // 0 to 20
-    double x = -10.0 + i * xModifier;
-    double y = Math.sin(i.toDouble());
-    y = 0.75 + rand.nextDouble() * 2.0;
-    double z = 0.0;
-    geometry.vertices.add(new Vector3(x, y, z));
-  }
-  
-  line = new Line(geometry, material);
-  scene.add(line);
 }
