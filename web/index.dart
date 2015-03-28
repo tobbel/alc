@@ -30,6 +30,18 @@ void init() {
   drawLineSegments();
   //drawTriangles();
   //drawLines();
+  
+  for (Vector2 intersectionPoint in intersectionPoints) {
+    var material = new MeshBasicMaterial(color: 0x00ff00);
+
+    var radius = 0.1;
+    var segments = 32;
+
+    var circleGeometry = new CircleGeometry(radius, segments);        
+    var circle = new Mesh(circleGeometry, material);
+    circle.position = new Vector3(intersectionPoint.x, intersectionPoint.y, 0.0);
+    scene.add(circle);
+  }
 
   renderer = new WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -44,7 +56,6 @@ void render(double dt) {
   renderer.render(scene, camera);
 }
 
-// TODO: LineSegment?
 class LineSegment {
   Vector2 start;
   Vector2 end;
@@ -52,6 +63,7 @@ class LineSegment {
   // Might as well use Vector3s to get depth, this is just easier to work with for now
   int depth;
   bool visible = true;
+  bool intersects = false;
   
   // Assumes point is on line
   List<LineSegment> split(Vector2 position) {
@@ -130,7 +142,7 @@ Vector2 intersects(LineSegment a, LineSegment b) {
   //Otherwise, the two line segments are not parallel but do not intersect.
   return null;
 }
-
+List<Vector2> intersectionPoints = new List<Vector2>();
 List<LineSegment> getPossibleIntersectors(LineSegment line, int parentIndex) {
   List<LineSegment> possibleIntersectors = new List<LineSegment>();
   for (int i = 0; i < Lines.length; i++) {
@@ -151,16 +163,30 @@ List<LineSegment> getPossibleIntersectors(LineSegment line, int parentIndex) {
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
+  const int lineCount = 10;
+  Math.Random rand = new Math.Random();
   // Start w/ two lines - set up manually
   LineGroup a = new LineGroup();
-  a.add(new LineSegment(new Vector2(-2.0, 1.0), new Vector2(0.0, -1.0)));
-  a.add(new LineSegment(new Vector2(0.0, -1.0), new Vector2(2.0, 1.0)));
+  Vector2 from = new Vector2(-6.0, 3.0 * rand.nextDouble());
+  for (int i = 0; i < lineCount; i++) {
+    Vector2 to = new Vector2(i - 5.0, 3.0 * rand.nextDouble());
+    a.add(new LineSegment(from, to));
+    from = to;
+  }
+//  a.add(new LineSegment(new Vector2(-2.0, 1.0), new Vector2(0.0, -1.0)));
+//  a.add(new LineSegment(new Vector2(0.0, -1.0), new Vector2(2.0, 1.0)));
   Lines.add(a);
   Horizon = a;
   
   LineGroup b = new LineGroup();
-  b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
-  b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
+  from = new Vector2(-6.0, 3.0 * rand.nextDouble());
+  for (int i = 0; i < lineCount; i++) {
+    Vector2 to = new Vector2(i - 5.0, 3.0 * rand.nextDouble());
+    b.add(new LineSegment(from, to));
+    from = to;
+  }
+  //b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
+  //b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
   Lines.add(b);
 
   // On intersect, remove line and add two new lines with start/end at intersect position.
@@ -175,42 +201,49 @@ void calculateLines() {
       // Get all other lines which start before and end after this one
       List<LineSegment> possibleIntersectors = getPossibleIntersectors(line, Lines.indexOf(lineGroup));
       print('Number of possibles: ' + possibleIntersectors.length.toString());
+      for (LineSegment intersector in possibleIntersectors) {
+        Vector2 intersectionPoint = intersects(line, intersector);
+        if (intersectionPoint != null) {
+          intersectionPoints.add(intersectionPoint);
+        }
+      }
     }
+    
   }
   
   // TODO: Iteration
-  Vector2 intersectionPoint = intersects(a[0], b[0]);
-  if (intersectionPoint != null)
-  {
-    // Split and replace
-    List<LineSegment> split = a[0].split(intersectionPoint);
-    a.removeAt(0);
-    a.insert(0, split[0]);
-    a.insert(1, split[1]);
-    
-    split = b[0].split(intersectionPoint);
-    b.removeAt(0);
-    b.insert(0, split[0]);
-    b.insert(1, split[1]);
-    
-    // Hide second part of second line
-    b[1].visible = false;
-    print(b.toString());
-  }
-  
-  intersectionPoint = intersects(a[2], b[2]);
-  if (intersectionPoint != null) {
-    var split = a[2].split(intersectionPoint);
-    a.removeAt(2);
-    a.insert(2, split[0]);
-    a.insert(3, split[1]);
-    
-    split = b[2].split(intersectionPoint);
-    b.removeAt(2);
-    b.insert(2, split[0]);
-    b.insert(3, split[1]);
-    b[2].visible = false;
-  }
+//  Vector2 intersectionPoint = intersects(a[0], b[0]);
+//  if (intersectionPoint != null)
+//  {
+//    // Split and replace
+//    List<LineSegment> split = a[0].split(intersectionPoint);
+//    a.removeAt(0);
+//    a.insert(0, split[0]);
+//    a.insert(1, split[1]);
+//    
+//    split = b[0].split(intersectionPoint);
+//    b.removeAt(0);
+//    b.insert(0, split[0]);
+//    b.insert(1, split[1]);
+//    
+//    // Hide second part of second line
+//    b[1].visible = false;
+//    print(b.toString());
+//  }
+//  
+//  intersectionPoint = intersects(a[2], b[2]);
+//  if (intersectionPoint != null) {
+//    var split = a[2].split(intersectionPoint);
+//    a.removeAt(2);
+//    a.insert(2, split[0]);
+//    a.insert(3, split[1]);
+//    
+//    split = b[2].split(intersectionPoint);
+//    b.removeAt(2);
+//    b.insert(2, split[0]);
+//    b.insert(3, split[1]);
+//    b[2].visible = false;
+//  }
 }
 
 void drawLineSegments() {
