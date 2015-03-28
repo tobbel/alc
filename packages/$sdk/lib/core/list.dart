@@ -87,14 +87,14 @@ abstract class List<E> implements Iterable<E>, EfficientLength {
   external factory List.filled(int length, E fill);
 
   /**
-   * Creates a list and initializes it using the contents of [other].
+   * Creates a list containing all [elements].
    *
-   * The [Iterator] of [other] provides the order of the objects.
+   * The [Iterator] of [elements] provides the order of the elements.
    *
-   * This constructor returns a growable list if [growable] is true;
+   * This constructor returns a growable list when [growable] is true;
    * otherwise, it returns a fixed-length list.
    */
-  external factory List.from(Iterable other, { bool growable: true });
+  external factory List.from(Iterable elements, { bool growable: true });
 
   /**
    * Generates a list of values.
@@ -441,6 +441,10 @@ abstract class List<E> implements Iterable<E>, EfficientLength {
    *     list.join(', '); // '1, 6, 7, 5'
    *
    * An error occurs if [start]..[end] is not a valid range for `this`.
+   *
+   * This method does not work on fixed-length lists, even when [replacement]
+   * has the same number of elements as the replaced range. In that case use
+   * [setRange] instead.
    */
   void replaceRange(int start, int end, Iterable<E> replacement);
 

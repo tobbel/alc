@@ -4,8 +4,11 @@
 
 library _js_helper;
 
-import 'shared/embedded_names.dart' show
-    ALL_CLASSES,
+import 'dart:_async_await_error_codes' as async_error_codes;
+
+import 'dart:_js_embedded_names' show
+    JsGetName,
+    GET_TYPE_FROM_NAME,
     GET_ISOLATE_TAG,
     INTERCEPTED_NAMES,
     INTERCEPTORS_BY_TAG,
@@ -14,16 +17,26 @@ import 'shared/embedded_names.dart' show
     DEFERRED_LIBRARY_URIS,
     DEFERRED_LIBRARY_HASHES,
     INITIALIZE_LOADED_HUNK,
-    IS_HUNK_LOADED;
+    IS_HUNK_LOADED,
+    IS_HUNK_INITIALIZED,
+    NATIVE_SUPERCLASS_TAG_NAME;
 
 import 'dart:collection';
+
 import 'dart:_isolate_helper' show
     IsolateNatives,
-    leaveJsAsync,
     enterJsAsync,
-    isWorker;
+    isWorker,
+    leaveJsAsync;
 
-import 'dart:async' show Future, DeferredLoadException, Completer;
+import 'dart:async' show
+    Future,
+    DeferredLoadException,
+    Completer,
+    StreamController,
+    Stream,
+    StreamSubscription,
+    scheduleMicrotask;
 
 import 'dart:_foreign_helper' show
     DART_CLOSURE_TO_JS,
@@ -56,7 +69,9 @@ import 'dart:_foreign_helper' show
 
 import 'dart:_interceptors';
 import 'dart:_internal' as _symbol_dev;
-import 'dart:_internal' show MappedIterable;
+import 'dart:_internal' show MappedIterable, EfficientLength;
+
+import 'dart:_native_typed_data';
 
 import 'dart:_js_names' show
     extractKeys,
@@ -70,12 +85,12 @@ part 'native_helper.dart';
 part 'regexp_helper.dart';
 part 'string_helper.dart';
 part 'js_rti.dart';
+part 'linked_hash_map.dart';
 
-class _Patch {
-  const _Patch();
+/// Marks the internal map in dart2js, so that internal libraries can is-check
+/// them.
+abstract class InternalMap {
 }
-
-const _Patch patch = const _Patch();
 
 /// No-op method that is called to inform the compiler that preambles might
 /// be needed when executing the resulting JS file in a command-line
@@ -217,18 +232,10 @@ class JSInvocationMirror implements Invocation {
     var receiver = object;
     var name = _internalName;
     var arguments = _arguments;
-    var embeddedInterceptedNames = JS_EMBEDDED_GLOBAL('', INTERCEPTED_NAMES);
-    // TODO(ngeoffray): If this functionality ever become performance
-    // critical, we might want to dynamically change [interceptedNames]
-    // to be a JavaScript object with intercepted names as property
-    // instead of a JavaScript array.
-    // TODO(floitsch): we already add stubs (tear-off getters) as properties
-    // in the embedded global interceptedNames.
-    // Finish the transition and always use the object as hashtable.
+    var interceptedNames = JS_EMBEDDED_GLOBAL('', INTERCEPTED_NAMES);
     bool isIntercepted =
-        JS("bool",
-            'Object.prototype.hasOwnProperty.call(#, #) || #.indexOf(#) !== -1',
-            embeddedInterceptedNames, name, interceptedNames, name);
+        JS("bool", 'Object.prototype.hasOwnProperty.call(#, #)',
+            interceptedNames, name);
     if (isIntercepted) {
       receiver = interceptor;
       if (JS('bool', '# === #', object, interceptor)) {
@@ -720,7 +727,7 @@ class Primitives {
     return "Instance of '$name'";
   }
 
-  static num dateNow() => JS('num', r'Date.now()');
+  static num dateNow() => JS('int', r'Date.now()');
 
   static void initTicker() {
     if (timerFrequency != null) return;
@@ -764,19 +771,17 @@ class Primitives {
   // This is to avoid stack overflows due to very large argument arrays in
   // apply().  It fixes http://dartbug.com/6919
   static String _fromCharCodeApply(List<int> array) {
-    String result = "";
     const kMaxApply = 500;
     int end = array.length;
-    for (var i = 0; i < end; i += kMaxApply) {
-      var subarray;
-      if (end <= kMaxApply) {
-        subarray = array;
-      } else {
-        subarray = JS('JSExtendableArray', r'#.slice(#, #)', array,
-                      i, i + kMaxApply < end ? i + kMaxApply : end);
-      }
-      result = JS('String', '# + String.fromCharCode.apply(#, #)',
-                  result, null, subarray);
+    if (end <= kMaxApply) {
+      return JS('String', r'String.fromCharCode.apply(null, #)', array);
+    }
+    String result = '';
+    for (int i = 0; i < end; i += kMaxApply) {
+      int chunkEnd = (i + kMaxApply < end) ? i + kMaxApply : end;
+      result = JS('String',
+          r'# + String.fromCharCode.apply(null, #.slice(#, #))',
+          result, array, i, chunkEnd);
     }
     return result;
   }
@@ -806,6 +811,24 @@ class Primitives {
     return _fromCharCodeApply(charCodes);
   }
 
+  // [start] and [end] are validated.
+  static String stringFromNativeUint8List(
+      NativeUint8List charCodes, int start, int end) {
+    const kMaxApply = 500;
+    if (end <= kMaxApply && start == 0 && end == charCodes.length) {
+      return JS('String', r'String.fromCharCode.apply(null, #)', charCodes);
+    }
+    String result = '';
+    for (int i = start; i < end; i += kMaxApply) {
+      int chunkEnd = (i + kMaxApply < end) ? i + kMaxApply : end;
+      result = JS('String',
+          r'# + String.fromCharCode.apply(null, #.subarray(#, #))',
+          result, charCodes, i, chunkEnd);
+    }
+    return result;
+  }
+
+
   static String stringFromCharCode(charCode) {
     if (0 <= charCode) {
       if (charCode <= 0xffff) {
@@ -826,7 +849,7 @@ class Primitives {
   }
 
   static String flattenString(String str) {
-    return JS('', "#.charCodeAt(0) == 0 ? # : #", str, str, str);
+    return JS('String', "#.charCodeAt(0) == 0 ? # : #", str, str, str);
   }
 
   static String getTimeZoneName(receiver) {
@@ -1014,7 +1037,7 @@ class Primitives {
     }
 
     String selectorName =
-      '${JS_GET_NAME("CALL_PREFIX")}\$$argumentCount$names';
+      '${JS_GET_NAME(JsGetName.CALL_PREFIX)}\$$argumentCount$names';
 
     return function.noSuchMethod(
         createUnmangledInvocationMirror(
@@ -1025,82 +1048,186 @@ class Primitives {
             namedArgumentList));
   }
 
+  static applyFunctionNewEmitter(Function function,
+                                 List positionalArguments,
+                                 Map<String, dynamic> namedArguments) {
+    if (namedArguments == null) {
+      int requiredParameterCount = JS('int', r'#[#]', function,
+          JS_GET_NAME(JsGetName.REQUIRED_PARAMETER_PROPERTY));
+      int argumentCount = positionalArguments.length;
+      if (argumentCount < requiredParameterCount) {
+        return functionNoSuchMethod(function, positionalArguments, null);
+      }
+      String selectorName =
+          '${JS_GET_NAME(JsGetName.CALL_PREFIX)}\$$argumentCount';
+      var jsStub = JS('var', r'#[#]', function, selectorName);
+      if (jsStub == null) {
+        // Do a dynamic call.
+        var interceptor = getInterceptor(function);
+        var jsFunction = JS('', '#[#]', interceptor,
+            JS_GET_NAME(JsGetName.CALL_CATCH_ALL));
+        var defaultValues = JS('var', r'#[#]', function,
+            JS_GET_NAME(JsGetName.DEFAULT_VALUES_PROPERTY));
+        if (!JS('bool', '# instanceof Array', defaultValues)) {
+          // The function expects named arguments!
+          return functionNoSuchMethod(function, positionalArguments, null);
+        }
+        int defaultsLength = JS('int', "#.length", defaultValues);
+        int maxArguments = requiredParameterCount + defaultsLength;
+        if (argumentCount > maxArguments) {
+          // The function expects less arguments!
+          return functionNoSuchMethod(function, positionalArguments, null);
+        }
+        List arguments = new List.from(positionalArguments);
+        List missingDefaults = JS('JSArray', '#.slice(#)', defaultValues,
+            argumentCount - requiredParameterCount);
+        arguments.addAll(missingDefaults);
+        return JS('var', '#.apply(#, #)', jsFunction, function, arguments);
+      }
+      return JS('var', '#.apply(#, #)', jsStub, function, positionalArguments);
+    } else {
+      var interceptor = getInterceptor(function);
+      var jsFunction = JS('', '#[#]', interceptor,
+          JS_GET_NAME(JsGetName.CALL_CATCH_ALL));
+      var defaultValues = JS('JSArray', r'#[#]', function,
+          JS_GET_NAME(JsGetName.DEFAULT_VALUES_PROPERTY));
+      List keys = JS('JSArray', r'Object.keys(#)', defaultValues);
+      List arguments = new List.from(positionalArguments);
+      int used = 0;
+      for (String key in keys) {
+        var value = namedArguments[key];
+        if (value != null) {
+          used++;
+          arguments.add(value);
+        } else {
+          arguments.add(JS('var', r'#[#]', defaultValues, key));
+        }
+      }
+      if (used != namedArguments.length) {
+        return functionNoSuchMethod(function, positionalArguments,
+            namedArguments);
+      }
+      return JS('var', r'#.apply(#, #)', jsFunction, function, arguments);
+    }
+  }
+
   static applyFunction(Function function,
                        List positionalArguments,
                        Map<String, dynamic> namedArguments) {
-    if (namedArguments != null && !namedArguments.isEmpty) {
-      // TODO(ahe): The following code can be shared with
-      // JsInstanceMirror.invoke.
-      var interceptor = getInterceptor(function);
-      var jsFunction = JS('', '#["call*"]', interceptor);
+    // Dispatch on presence of named arguments to improve tree-shaking.
+    //
+    // This dispatch is as simple as possible to help the compiler detect the
+    // common case of `null` namedArguments, either via inlining or
+    // specialization.
+    return namedArguments == null
+        ? applyFunctionWithPositionalArguments(
+            function, positionalArguments)
+        : applyFunctionWithNamedArguments(
+            function, positionalArguments, namedArguments);
+  }
 
-      if (jsFunction == null) {
-        return functionNoSuchMethod(
-            function, positionalArguments, namedArguments);
-      }
-      ReflectionInfo info = new ReflectionInfo(jsFunction);
-      if (info == null || !info.areOptionalParametersNamed) {
-        return functionNoSuchMethod(
-            function, positionalArguments, namedArguments);
-      }
-
-      if (positionalArguments != null) {
-        positionalArguments = new List.from(positionalArguments);
-      } else {
-        positionalArguments = [];
-      }
-      // Check the number of positional arguments is valid.
-      if (info.requiredParameterCount != positionalArguments.length) {
-        return functionNoSuchMethod(
-            function, positionalArguments, namedArguments);
-      }
-      var defaultArguments = new Map();
-      for (int i = 0; i < info.optionalParameterCount; i++) {
-        int index = i + info.requiredParameterCount;
-        var parameterName = info.parameterNameInOrder(index);
-        var value = info.defaultValueInOrder(index);
-        var defaultValue = getMetadata(value);
-        defaultArguments[parameterName] = defaultValue;
-      }
-      bool bad = false;
-      namedArguments.forEach((String parameter, value) {
-        if (defaultArguments.containsKey(parameter)) {
-          defaultArguments[parameter] = value;
-        } else {
-          // Extraneous named argument.
-          bad = true;
-        }
-      });
-      if (bad) {
-        return functionNoSuchMethod(
-            function, positionalArguments, namedArguments);
-      }
-      positionalArguments.addAll(defaultArguments.values);
-      return JS('', '#.apply(#, #)', jsFunction, function, positionalArguments);
-    }
-
+  static applyFunctionWithPositionalArguments(Function function,
+                                              List positionalArguments) {
     int argumentCount = 0;
-    List arguments = [];
+    List arguments;
 
     if (positionalArguments != null) {
-      argumentCount += positionalArguments.length;
-      arguments.addAll(positionalArguments);
+      if (JS('bool', '# instanceof Array', positionalArguments)) {
+        arguments = positionalArguments;
+      } else {
+        arguments = new List.from(positionalArguments);
+      }
+      argumentCount = JS('int', '#.length', arguments);
+    } else {
+      arguments = [];
     }
 
-    String selectorName = '${JS_GET_NAME("CALL_PREFIX")}\$$argumentCount';
+    String selectorName =
+        '${JS_GET_NAME(JsGetName.CALL_PREFIX)}\$$argumentCount';
     var jsFunction = JS('var', '#[#]', function, selectorName);
     if (jsFunction == null) {
+      var interceptor = getInterceptor(function);
+      jsFunction = JS('', '#["call*"]', interceptor);
 
-      // TODO(ahe): This might occur for optional arguments if there is no call
-      // selector with that many arguments.
-
-      return
-          functionNoSuchMethod(function, positionalArguments, namedArguments);
+      if (jsFunction == null) {
+        return functionNoSuchMethod(function, positionalArguments, null);
+      }
+      ReflectionInfo info = new ReflectionInfo(jsFunction);
+      int requiredArgumentCount = info.requiredParameterCount;
+      int maxArgumentCount = requiredArgumentCount +
+          info.optionalParameterCount;
+      if (info.areOptionalParametersNamed ||
+          requiredArgumentCount > argumentCount ||
+          maxArgumentCount < argumentCount) {
+        return functionNoSuchMethod(function, positionalArguments, null);
+      }
+      arguments = new List.from(arguments);
+      for (int pos = argumentCount; pos < maxArgumentCount; pos++) {
+        arguments.add(getMetadata(info.defaultValue(pos)));
+      }
     }
     // We bound 'this' to [function] because of how we compile
     // closures: escaped local variables are stored and accessed through
     // [function].
     return JS('var', '#.apply(#, #)', jsFunction, function, arguments);
+  }
+
+  static applyFunctionWithNamedArguments(Function function,
+                                         List positionalArguments,
+                                         Map<String, dynamic> namedArguments) {
+    if (namedArguments.isEmpty) {
+      return applyFunctionWithPositionalArguments(
+          function, positionalArguments);
+    }
+    // TODO(ahe): The following code can be shared with
+    // JsInstanceMirror.invoke.
+    var interceptor = getInterceptor(function);
+    var jsFunction = JS('', '#[#]', interceptor,
+        JS_GET_NAME(JsGetName.CALL_CATCH_ALL));
+
+    if (jsFunction == null) {
+      return functionNoSuchMethod(
+          function, positionalArguments, namedArguments);
+    }
+    ReflectionInfo info = new ReflectionInfo(jsFunction);
+    if (info == null || !info.areOptionalParametersNamed) {
+      return functionNoSuchMethod(
+          function, positionalArguments, namedArguments);
+    }
+
+    if (positionalArguments != null) {
+      positionalArguments = new List.from(positionalArguments);
+    } else {
+      positionalArguments = [];
+    }
+    // Check the number of positional arguments is valid.
+    if (info.requiredParameterCount != positionalArguments.length) {
+      return functionNoSuchMethod(
+          function, positionalArguments, namedArguments);
+    }
+    var defaultArguments = new Map();
+    for (int i = 0; i < info.optionalParameterCount; i++) {
+      int index = i + info.requiredParameterCount;
+      var parameterName = info.parameterNameInOrder(index);
+      var value = info.defaultValueInOrder(index);
+      var defaultValue = getMetadata(value);
+      defaultArguments[parameterName] = defaultValue;
+    }
+    bool bad = false;
+    namedArguments.forEach((String parameter, value) {
+      if (defaultArguments.containsKey(parameter)) {
+        defaultArguments[parameter] = value;
+      } else {
+        // Extraneous named argument.
+        bad = true;
+      }
+    });
+    if (bad) {
+      return functionNoSuchMethod(
+          function, positionalArguments, namedArguments);
+    }
+    positionalArguments.addAll(defaultArguments.values);
+    return JS('', '#.apply(#, #)', jsFunction, function, positionalArguments);
   }
 
   static _mangledNameMatchesType(String mangledName, TypeImpl type) {
@@ -1662,6 +1789,9 @@ unwrapException(ex) {
   // Note that we are checking if the object has the property. If it
   // has, it could be set to null if the thrown value is null.
   if (ex == null) return null;
+  if (ex is ExceptionAndStackTrace) {
+    return saveStackTrace(ex.dartException);
+  }
   if (JS('bool', 'typeof # !== "object"', ex)) return ex;
 
   if (JS('bool', r'"dartException" in #', ex)) {
@@ -1785,7 +1915,12 @@ unwrapException(ex) {
  * Called by generated code to fetch the stack trace from an
  * exception. Should never return null.
  */
-StackTrace getTraceFromException(exception) => new _StackTrace(exception);
+StackTrace getTraceFromException(exception) {
+  if (exception is ExceptionAndStackTrace) {
+    return exception.stackTrace;
+  }
+  return new _StackTrace(exception);
+}
 
 class _StackTrace implements StackTrace {
   var _exception;
@@ -1793,10 +1928,11 @@ class _StackTrace implements StackTrace {
   _StackTrace(this._exception);
 
   String toString() {
-    if (_trace != null) return _trace;
+    if (_trace != null) return JS('String', '#', _trace);
 
     String trace;
-    if (JS('bool', 'typeof # === "object"', _exception)) {
+    if (JS('bool', '# !== null', _exception) &&
+        JS('bool', 'typeof # === "object"', _exception)) {
       trace = JS("String|Null", r"#.stack", _exception);
     }
     return _trace = (trace == null) ? '' : trace;
@@ -1920,14 +2056,15 @@ abstract class Closure implements Function {
    *
    * Further assumes that [reflectionInfo] is the end of the array created by
    * [dart2js.js_emitter.ContainerBuilder.addMemberMethod] starting with
-   * required parameter count.
+   * required parameter count or, in case of the new emitter, the runtime
+   * representation of the function's type.
    *
    * Caution: this function may be called when building constants.
    * TODO(ahe): Don't call this function when building constants.
    */
   static fromTearOff(receiver,
                      List functions,
-                     List reflectionInfo,
+                     var reflectionInfo,
                      bool isStatic,
                      jsArguments,
                      String propertyName) {
@@ -1939,12 +2076,18 @@ abstract class Closure implements Function {
     // through the namer.
     var function = JS('', '#[#]', functions, 0);
     String name = JS('String|Null', '#.\$stubName', function);
-    String callName = JS('String|Null', '#.\$callName', function);
+    String callName = JS('String|Null', '#[#]', function,
+        JS_GET_NAME(JsGetName.CALL_NAME_PROPERTY));
 
-    JS('', '#.\$reflectionInfo = #', function, reflectionInfo);
-    ReflectionInfo info = new ReflectionInfo(function);
+    var functionType;
+    if (reflectionInfo is List) {
+      JS('', '#.\$reflectionInfo = #', function, reflectionInfo);
+      ReflectionInfo info = new ReflectionInfo(function);
+      functionType = info.functionType;
+    } else {
+      functionType = reflectionInfo;
+    }
 
-    var functionType = info.functionType;
 
     // function tmp() {};
     // tmp.prototype = BC.prototype;
@@ -1955,7 +2098,7 @@ abstract class Closure implements Function {
     // var dynClosureConstructor =
     //     new Function('self', 'target', 'receiver', 'name',
     //                  'this._init(self, target, receiver, name)');
-    // proto.constructor = dynClosureConstructor; // Necessary?
+    // proto.constructor = dynClosureConstructor;
     // dynClosureConstructor.prototype = proto;
     // return dynClosureConstructor;
 
@@ -1970,7 +2113,6 @@ abstract class Closure implements Function {
     // So we only use the new instance to access the constructor property and
     // use Object.create to create the desired prototype.
     var prototype = isStatic
-        // TODO(ahe): Safe to use Object.create?
         ? JS('TearOffClosure', 'Object.create(#.constructor.prototype)',
              new TearOffClosure())
         : JS('BoundClosure', 'Object.create(#.constructor.prototype)',
@@ -1986,7 +2128,8 @@ abstract class Closure implements Function {
                      '"this.\$initialize(a,b,c,d);"+#)',
                  functionCounter++);
 
-    // TODO(ahe): Is it necessary to set the constructor property?
+    // It is necessary to set the constructor property, otherwise it will be
+    // "Object".
     JS('', '#.constructor = #', prototype, constructor);
 
     JS('', '#.prototype = #', constructor, prototype);
@@ -2031,19 +2174,25 @@ abstract class Closure implements Function {
       throw 'Error in reflectionInfo.';
     }
 
-    JS('', '#.\$signature = #', prototype, signatureFunction);
+    JS('', '#[#] = #', prototype, JS_SIGNATURE_NAME(), signatureFunction);
 
     JS('', '#[#] = #', prototype, callName, trampoline);
     for (int i = 1; i < functions.length; i++) {
       var stub = functions[i];
-      var stubCallName = JS('String|Null', '#.\$callName', stub);
+      var stubCallName = JS('String|Null', '#[#]', stub,
+          JS_GET_NAME(JsGetName.CALL_NAME_PROPERTY));
       if (stubCallName != null) {
         JS('', '#[#] = #', prototype, stubCallName,
            isStatic ? stub : forwardCallTo(receiver, stub, isIntercepted));
       }
     }
 
-    JS('', '#["call*"] = #', prototype, trampoline);
+    JS('', '#[#] = #', prototype, JS_GET_NAME(JsGetName.CALL_CATCH_ALL),
+        trampoline);
+    String reqArgProperty = JS_GET_NAME(JsGetName.REQUIRED_PARAMETER_PROPERTY);
+    String defValProperty = JS_GET_NAME(JsGetName.DEFAULT_VALUES_PROPERTY);
+    JS('', '#.# = #.#', prototype, reqArgProperty, function, reqArgProperty);
+    JS('', '#.# = #.#', prototype, defValProperty, function, defValProperty);
 
     return constructor;
   }
@@ -2113,7 +2262,7 @@ abstract class Closure implements Function {
     }
   }
 
-  static bool get isCsp => JS('bool', 'typeof dart_precompiled == "function"');
+  static bool get isCsp => JS_GET_FLAG("USE_CONTENT_SECURITY_POLICY");
 
   static forwardCallTo(receiver, function, bool isIntercepted) {
     if (isIntercepted) return forwardInterceptedCallTo(receiver, function);
@@ -2230,7 +2379,7 @@ abstract class Closure implements Function {
     String receiverField = BoundClosure.receiverFieldName();
     String stubName = JS('String|Null', '#.\$stubName', function);
     int arity = JS('int', '#.length', function);
-    bool isCsp = JS('bool', 'typeof dart_precompiled == "function"');
+    bool isCsp = JS_GET_FLAG("USE_CONTENT_SECURITY_POLICY");
     var lookedUpFunction = JS("", "#[#]", receiver, stubName);
     // The receiver[stubName] may not be equal to the function if we try to
     // forward to a super-method. Especially when we create a bound closure
@@ -2286,7 +2435,8 @@ closureFromTearOff(receiver,
   return Closure.fromTearOff(
       receiver,
       JSArray.markFixedList(functions),
-      JSArray.markFixedList(reflectionInfo),
+      reflectionInfo is List ? JSArray.markFixedList(reflectionInfo)
+                             : reflectionInfo,
       JS('bool', '!!#', isStatic),
       jsArguments,
       JS('String', '#', name));
@@ -3105,8 +3255,8 @@ class RuntimeTypePlain extends RuntimeType {
   RuntimeTypePlain(this.name);
 
   toRti() {
-    var allClasses = JS_EMBEDDED_GLOBAL('', ALL_CLASSES);
-    var rti = JS('', '#[#]', allClasses, name);
+    var getTypeFromName = JS_EMBEDDED_GLOBAL('', GET_TYPE_FROM_NAME);
+    var rti = JS('', '#(#)', getTypeFromName, name);
     if (rti == null) throw "no type for '$name'";
     return rti;
   }
@@ -3123,8 +3273,8 @@ class RuntimeTypeGeneric extends RuntimeType {
 
   toRti() {
     if (rti != null) return rti;
-    var allClasses = JS_EMBEDDED_GLOBAL('', ALL_CLASSES);
-    var result = JS('JSExtendableArray', '[#[#]]', allClasses, name);
+    var getTypeFromName = JS_EMBEDDED_GLOBAL('', GET_TYPE_FROM_NAME);
+    var result = JS('JSExtendableArray', '[#(#)]', getTypeFromName, name);
     if (result[0] == null) {
       throw "no type for '$name<...>'";
     }
@@ -3281,15 +3431,20 @@ Future<Null> loadDeferredLibrary(String loadId) {
   // The indices into `uris` and `hashes` that we want to load.
   List<int> indices = new List.generate(uris.length, (i) => i);
   var isHunkLoaded = JS_EMBEDDED_GLOBAL('', IS_HUNK_LOADED);
-  return Future.wait(indices
-      // Filter away indices for hunks that have already been loaded.
+  var isHunkInitialized = JS_EMBEDDED_GLOBAL('', IS_HUNK_INITIALIZED);
+  // Filter away indices for hunks that have already been loaded.
+  List<int> indicesToLoad = indices
       .where((int i) => !JS('bool','#(#)', isHunkLoaded, hashes[i]))
-      // Load the rest.
+      .toList();
+  return Future.wait(indicesToLoad
       .map((int i) => _loadHunk(uris[i]))).then((_) {
-    // Now all hunks have been loaded, we call all their initializers
-    for (String hash in hashes) {
+    // Now all hunks have been loaded, we run the needed initializers.
+    List<int> indicesToInitialize = indices
+        .where((int i) => !JS('bool','#(#)', isHunkInitialized, hashes[i]))
+        .toList();  // Load the needed hunks.
+    for (int i in indicesToInitialize) {
       var initializer = JS_EMBEDDED_GLOBAL('', INITIALIZE_LOADED_HUNK);
-      JS('void', '#(#)', initializer, hash);
+      JS('void', '#(#)', initializer, hashes[i]);
     }
     bool updated = _loadedLibraries.add(loadId);
     if (updated && deferredLoadHook != null) {
@@ -3299,9 +3454,6 @@ Future<Null> loadDeferredLibrary(String loadId) {
 }
 
 Future<Null> _loadHunk(String hunkName) {
-  // TODO(ahe): Validate libraryName.  Kasper points out that you want
-  // to be able to experiment with the effect of toggling @DeferLoad,
-  // so perhaps we should silently ignore "bad" library names.
   Future<Null> future = _loadingLibraries[hunkName];
   if (future != null) {
     return future.then((_) => null);
@@ -3312,82 +3464,74 @@ Future<Null> _loadHunk(String hunkName) {
   int index = uri.lastIndexOf('/');
   uri = '${uri.substring(0, index + 1)}$hunkName';
 
-  if (Primitives.isJsshell || Primitives.isD8) {
-    // TODO(ahe): Move this code to a JavaScript command helper script that is
-    // not included in generated output.
-    return _loadingLibraries[hunkName] = new Future<Null>(() {
+  var deferredLibraryLoader = JS('', 'self.dartDeferredLibraryLoader');
+  Completer<Null> completer = new Completer<Null>();
+
+  void success() {
+    completer.complete(null);
+  }
+
+  void failure([error, StackTrace stackTrace]) {
+    _loadingLibraries[hunkName] = null;
+    completer.completeError(
+        new DeferredLoadException("Loading $uri failed: $error"),
+        stackTrace);
+  }
+
+  var jsSuccess = convertDartClosureToJS(success, 0);
+  var jsFailure = convertDartClosureToJS((error) {
+    failure(unwrapException(error), getTraceFromException(error));
+  }, 1);
+
+  if (JS('bool', 'typeof # === "function"', deferredLibraryLoader)) {
+    try {
+      JS('void', '#(#, #, #)', deferredLibraryLoader, uri,
+          jsSuccess, jsFailure);
+    } catch (error, stackTrace) {
+      failure(error, stackTrace);
+    }
+  } else if (isWorker()) {
+    // We are in a web worker. Load the code with an XMLHttpRequest.
+    enterJsAsync();
+    Future<Null> leavingFuture = completer.future.whenComplete(() {
+      leaveJsAsync();
+    });
+
+    int index = uri.lastIndexOf('/');
+    uri = '${uri.substring(0, index + 1)}$hunkName';
+    var xhr = JS('dynamic', 'new XMLHttpRequest()');
+    JS('void', '#.open("GET", #)', xhr, uri);
+    JS('void', '#.addEventListener("load", #, false)',
+       xhr, convertDartClosureToJS((event) {
+      if (JS('int', '#.status', xhr) != 200) {
+        failure("");
+      }
+      String code = JS('String', '#.responseText', xhr);
       try {
         // Create a new function to avoid getting access to current function
         // context.
-        JS('void', '(new Function(#))()', 'load("$uri")');
+        JS('void', '(new Function(#))()', code);
+        success();
       } catch (error, stackTrace) {
-        throw new DeferredLoadException("Loading $uri failed.");
+        failure(error, stackTrace);
       }
-      return null;
-    });
-  } else if (isWorker()) {
-    // We are in a web worker. Load the code with an XMLHttpRequest.
-    return _loadingLibraries[hunkName] = new Future<Null>(() {
-      Completer completer = new Completer<Null>();
-      enterJsAsync();
-      Future<Null> leavingFuture = completer.future.whenComplete(() {
-        leaveJsAsync();
-      });
+    }, 1));
 
-      int index = uri.lastIndexOf('/');
-      uri = '${uri.substring(0, index + 1)}$hunkName';
-      var xhr = JS('dynamic', 'new XMLHttpRequest()');
-      JS('void', '#.open("GET", #)', xhr, uri);
-      JS('void', '#.addEventListener("load", #, false)',
-         xhr, convertDartClosureToJS((event) {
-        if (JS('int', '#.status', xhr) != 200) {
-          completer.completeError(
-              new DeferredLoadException("Loading $uri failed."));
-          return;
-        }
-        String code = JS('String', '#.responseText', xhr);
-        try {
-          // Create a new function to avoid getting access to current function
-          // context.
-          JS('void', '(new Function(#))()', code);
-        } catch (error, stackTrace) {
-          completer.completeError(
-            new DeferredLoadException("Evaluating $uri failed."));
-          return;
-        }
-        completer.complete(null);
-      }, 1));
-
-      var fail = convertDartClosureToJS((event) {
-        new DeferredLoadException("Loading $uri failed.");
-      }, 1);
-      JS('void', '#.addEventListener("error", #, false)', xhr, fail);
-      JS('void', '#.addEventListener("abort", #, false)', xhr, fail);
-
-      JS('void', '#.send()', xhr);
-      return leavingFuture;
-    });
-  }
-  // We are in a dom-context.
-  return _loadingLibraries[hunkName] = new Future<Null>(() {
-    Completer completer = new Completer<Null>();
+    JS('void', '#.addEventListener("error", #, false)', xhr, failure);
+    JS('void', '#.addEventListener("abort", #, false)', xhr, failure);
+    JS('void', '#.send()', xhr);
+  } else {
+    // We are in a dom-context.
     // Inject a script tag.
     var script = JS('', 'document.createElement("script")');
     JS('', '#.type = "text/javascript"', script);
     JS('', '#.src = #', script, uri);
-    JS('', '#.addEventListener("load", #, false)',
-       script, convertDartClosureToJS((event) {
-      completer.complete(null);
-    }, 1));
-    JS('', '#.addEventListener("error", #, false)',
-       script, convertDartClosureToJS((event) {
-      completer.completeError(
-          new DeferredLoadException("Loading $uri failed."));
-    }, 1));
+    JS('', '#.addEventListener("load", #, false)', script, jsSuccess);
+    JS('', '#.addEventListener("error", #, false)', script, jsFailure);
     JS('', 'document.body.appendChild(#)', script);
-
-    return completer.future;
-  });
+  }
+  _loadingLibraries[hunkName] = completer.future;
+  return completer.future;
 }
 
 class MainError extends Error implements NoSuchMethodError {
@@ -3408,4 +3552,328 @@ void badMain() {
 
 void mainHasTooManyParameters() {
   throw new MainError("'main' expects too many parameters.");
+}
+
+/// A wrapper around an exception, much like the one created by [wrapException]
+/// but with a pre-given stack-trace.
+class ExceptionAndStackTrace {
+  dynamic dartException;
+  StackTrace stackTrace;
+
+  ExceptionAndStackTrace(this.dartException, this.stackTrace);
+}
+
+/// Runtime support for async-await transformation.
+///
+/// This function is called by a transformed function on each await and return
+/// in the untransformed function, and before starting.
+///
+/// If [object] is not a future it will be wrapped in a `new Future.value`.
+///
+/// If [asyncBody] is [async_error_codes.SUCCESS]/[async_error_codes.ERROR] it
+/// indicates a return or throw from the async function, and
+/// complete/completeError is called on [completer] with [object].
+///
+/// Otherwise [asyncBody] is set up to be called when the future is completed
+/// with a code [async_error_codes.SUCCESS]/[async_error_codes.ERROR] depending
+/// on the success of the future.
+///
+/// Returns the future of the completer for convenience of the first call.
+dynamic asyncHelper(dynamic object,
+                    dynamic /* js function */ bodyFunctionOrErrorCode,
+                    Completer completer) {
+  if (identical(bodyFunctionOrErrorCode, async_error_codes.SUCCESS)) {
+    completer.complete(object);
+    return;
+  } else if (identical(bodyFunctionOrErrorCode, async_error_codes.ERROR)) {
+    // The error is a js-error.
+    completer.completeError(unwrapException(object),
+                            getTraceFromException(object));
+    return;
+  }
+  Future future = object is Future ? object : new Future.value(object);
+  future.then(_wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+                                      async_error_codes.SUCCESS),
+      onError: (dynamic error, StackTrace stackTrace) {
+        ExceptionAndStackTrace wrapped =
+            new ExceptionAndStackTrace(error, stackTrace);
+        return _wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+                                       async_error_codes.ERROR)(wrapped);
+      });
+  return completer.future;
+}
+
+Function _wrapJsFunctionForAsync(dynamic /* js function */ function,
+                                 int errorCode) {
+  var protected = JS('', """
+    // Invokes [function] with [errorCode] and [result].
+    //
+    // If (and as long as) the invocation throws, calls [function] again,
+    // with an error-code.
+    function(errorCode, result) {
+      while (true) {
+        try {
+          #(errorCode, result);
+          break;
+        } catch (error) {
+          result = error;
+          errorCode = #;
+        }
+      }
+    }""", function, async_error_codes.ERROR);
+  return (result) {
+    JS('', '#(#, #)', protected, errorCode, result);
+  };
+}
+
+/// Implements the runtime support for async* functions.
+///
+/// Called by the transformed function for each original return, await, yield,
+/// yield* and before starting the function.
+///
+/// When the async* function wants to return it calls this function with
+/// [asyncBody] == [async_error_codes.SUCCESS], the asyncStarHelper takes this
+/// as signal to close the stream.
+///
+/// When the async* function wants to signal that an uncaught error was thrown,
+/// it calls this function with [asyncBody] == [async_error_codes.ERROR],
+/// the streamHelper takes this as signal to addError [object] to the
+/// [controller] and close it.
+///
+/// If the async* function wants to do a yield or yield*, it calls this function
+/// with [object] being an [IterationMarker].
+///
+/// In the case of a yield or yield*, if the stream subscription has been
+/// canceled, schedules [asyncBody] to be called with
+/// [async_error_codes.STREAM_WAS_CANCELED].
+///
+/// If [object] is a single-yield [IterationMarker], adds the value of the
+/// [IterationMarker] to the stream. If the stream subscription has been
+/// paused, return early. Otherwise schedule the helper function to be
+/// executed again.
+///
+/// If [object] is a yield-star [IterationMarker], starts listening to the
+/// yielded stream, and adds all events and errors to our own controller (taking
+/// care if the subscription has been paused or canceled) - when the sub-stream
+/// is done, schedules [asyncBody] again.
+///
+/// If the async* function wants to do an await it calls this function with
+/// [object] not and [IterationMarker].
+///
+/// If [object] is not a [Future], it is wrapped in a `Future.value`.
+/// The [asyncBody] is called on completion of the future (see [asyncHelper].
+void asyncStarHelper(dynamic object,
+                     dynamic /* int | js function */ bodyFunctionOrErrorCode,
+                     AsyncStarStreamController controller) {
+  if (identical(bodyFunctionOrErrorCode, async_error_codes.SUCCESS)) {
+    // This happens on return from the async* function.
+    controller.close();
+    return;
+  } else if (identical(bodyFunctionOrErrorCode, async_error_codes.ERROR)) {
+    // The error is a js-error.
+    controller.addError(unwrapException(object),
+                        getTraceFromException(object));
+    controller.close();
+    return;
+  }
+
+  if (object is IterationMarker) {
+    if (controller.stopRunning) {
+      _wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+          async_error_codes.STREAM_WAS_CANCELED)(null);
+      return;
+    }
+    if (object.state == IterationMarker.YIELD_SINGLE) {
+      controller.add(object.value);
+      // If the controller is paused we stop producing more values.
+      if (controller.isPaused) {
+        return;
+      }
+      // TODO(sigurdm): We should not suspend here according to the spec.
+      scheduleMicrotask(() {
+        _wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+                                async_error_codes.SUCCESS)
+            (null);
+      });
+      return;
+    } else if (object.state == IterationMarker.YIELD_STAR) {
+      Stream stream = object.value;
+      controller.isAdding = true;
+      // Errors of [stream] are passed though to the main stream. (see
+      // [AsyncStreamController.addStream].
+      // TODO(sigurdm): The spec is not very clear here. Clarify with Gilad.
+      controller.addStream(stream).then((_) {
+        controller.isAdding = false;
+        _wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+                                async_error_codes.SUCCESS)(null);
+      });
+      return;
+    }
+  }
+
+  Future future = object is Future ? object : new Future.value(object);
+  future.then(_wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+                                      async_error_codes.SUCCESS),
+              onError: (error, StackTrace stackTrace) {
+                ExceptionAndStackTrace wrapped =
+                    new ExceptionAndStackTrace(error, stackTrace);
+                return _wrapJsFunctionForAsync(bodyFunctionOrErrorCode,
+                                               async_error_codes.ERROR)
+                    (wrapped);
+              });
+}
+
+Stream streamOfController(AsyncStarStreamController controller) {
+  return controller.stream;
+}
+
+/// A wrapper around a [StreamController] that remembers if that controller
+/// got a cancel.
+///
+/// Also has a subSubscription that when not null will provide events for the
+/// stream, and will be paused and resumed along with this controller.
+class AsyncStarStreamController {
+  StreamController controller;
+  Stream get stream => controller.stream;
+  bool stopRunning = false;
+  bool isAdding = false;
+  bool isPaused = false;
+  add(event) => controller.add(event);
+  addStream(Stream stream) {
+    return controller.addStream(stream, cancelOnError: false);
+  }
+  addError(error, stackTrace) => controller.addError(error, stackTrace);
+  close() => controller.close();
+
+  AsyncStarStreamController(body) {
+    controller = new StreamController(
+      onListen: () {
+        scheduleMicrotask(() {
+          Function wrapped = _wrapJsFunctionForAsync(body,
+                                                     async_error_codes.SUCCESS);
+          wrapped(null);
+        });
+      },
+      onPause: () {
+        isPaused = true;
+      }, onResume: () {
+        isPaused = false;
+        if (!isAdding) {
+          asyncStarHelper(null, body, this);
+        }
+      }, onCancel: () {
+        stopRunning = true;
+        if (isPaused) asyncStarHelper(null, body, this);
+      });
+  }
+}
+
+makeAsyncStarController(body) {
+  return new AsyncStarStreamController(body);
+}
+
+class IterationMarker {
+  static const YIELD_SINGLE = 0;
+  static const YIELD_STAR = 1;
+  static const ITERATION_ENDED = 2;
+  static const UNCAUGHT_ERROR = 3;
+
+  final value;
+  final int state;
+
+  IterationMarker._(this.state, this.value);
+
+  static yieldStar(dynamic /* Iterable or Stream */ values) {
+    return new IterationMarker._(YIELD_STAR, values);
+  }
+
+  static endOfIteration() {
+    return new IterationMarker._(ITERATION_ENDED, null);
+  }
+
+  static yieldSingle(dynamic value) {
+    return new IterationMarker._(YIELD_SINGLE, value);
+  }
+
+  static uncaughtError(dynamic error) {
+    return new IterationMarker._(UNCAUGHT_ERROR, error);
+  }
+
+  toString() => "IterationMarker($state, $value)";
+}
+
+class SyncStarIterator implements Iterator {
+  final dynamic _body;
+
+  // If [runningNested] this is the nested iterator, otherwise it is the
+  // current value.
+  dynamic _current = null;
+  bool _runningNested = false;
+
+  get current => _runningNested ? _current.current : _current;
+
+  SyncStarIterator(this._body);
+
+  _runBody() {
+    return JS('', '''
+      // Invokes [body] with [errorCode] and [result].
+      //
+      // If (and as long as) the invocation throws, calls [function] again,
+      // with an error-code.
+      (function(body) {
+        var errorValue, errorCode = #;
+        while (true) {
+          try {
+            return body(errorCode, errorValue);
+          } catch (error) {
+            errorValue = error;
+            errorCode = #
+          }
+        }
+      })(#)''', async_error_codes.SUCCESS, async_error_codes.ERROR, _body);
+  }
+
+
+  bool moveNext() {
+    if (_runningNested) {
+      if (_current.moveNext()) {
+        return true;
+      } else {
+        _runningNested = false;
+      }
+    }
+    _current = _runBody();
+    if (_current is IterationMarker) {
+      if (_current.state == IterationMarker.ITERATION_ENDED) {
+        _current = null;
+        // Rely on [_body] to repeatedly return `ITERATION_ENDED`.
+        return false;
+      } else if (_current.state == IterationMarker.UNCAUGHT_ERROR) {
+        // Rely on [_body] to repeatedly return `UNCAUGHT_ERROR`.
+        // This is a wrapped exception, so we use JavaScript throw to throw it.
+        JS('', 'throw #', _current.value);
+      } else {
+        assert(_current.state == IterationMarker.YIELD_STAR);
+        _current = _current.value.iterator;
+        _runningNested = true;
+        return moveNext();
+      }
+    }
+    return true;
+  }
+}
+
+/// An Iterable corresponding to a sync* method.
+///
+/// Each invocation of a sync* method will return a new instance of this class.
+class SyncStarIterable extends IterableBase {
+  // This is a function that will return a helper function that does the
+  // iteration of the sync*.
+  //
+  // Each invocation should give a body with fresh state.
+  final dynamic /* js function */ _outerHelper;
+
+  SyncStarIterable(this._outerHelper);
+
+  Iterator get iterator => new SyncStarIterator(JS('', '#()', _outerHelper));
 }

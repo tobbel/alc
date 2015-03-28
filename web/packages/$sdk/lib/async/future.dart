@@ -239,14 +239,24 @@ abstract class Future<T> {
    * Returns a future which will complete once all the futures in a list are
    * complete. If any of the futures in the list completes with an error,
    * the resulting future also completes with an error. Otherwise the value
-   * of the returned future will be a list of all the values that were produced.
+   * of the returned future will be a list of all the values that were
+   * produced.
    *
    * If `eagerError` is true, the future completes with an error immediately on
    * the first error from one of the futures. Otherwise all futures must
    * complete before the returned future is completed (still with the first
    * error to occur, the remaining errors are silently dropped).
+   *
+   * If [cleanUp] is provided, in the case of an error, any non-null result of
+   * a successful future is passed to `cleanUp`, which can then release any
+   * resources that the successful operation allocated.
+   *
+   * The call to `cleanUp` should not throw. If it does, the error will be an
+   * uncaught asynchronous error.
    */
-  static Future<List> wait(Iterable<Future> futures, {bool eagerError: false}) {
+  static Future<List> wait(Iterable<Future> futures,
+                           {bool eagerError: false,
+                            void cleanUp(successValue)}) {
     final _Future<List> result = new _Future<List>();
     List values;  // Collects the values. Set to null on error.
     int remaining = 0;  // How many futures are we waiting for.
@@ -254,11 +264,18 @@ abstract class Future<T> {
     StackTrace stackTrace;  // The stackTrace that came with the error.
 
     // Handle an error from any of the futures.
-    handleError(theError, theStackTrace) {
-      final bool isFirstError = (values != null);
-      values = null;
+    void handleError(theError, theStackTrace) {
       remaining--;
-      if (isFirstError) {
+      if (values != null) {
+        if (cleanUp != null) {
+          for (var value in values) {
+            if (value != null) {
+              // Ensure errors from cleanUp are uncaught.
+              new Future.sync(() { cleanUp(value); });
+            }
+          }
+        }
+        values = null;
         if (remaining == 0 || eagerError) {
           result._completeError(theError, theStackTrace);
         } else {
@@ -281,8 +298,14 @@ abstract class Future<T> {
           if (remaining == 0) {
             result._completeWithValue(values);
           }
-        } else if (remaining == 0 && !eagerError) {
-          result._completeError(error, stackTrace);
+        } else {
+          if (cleanUp != null && value != null) {
+            // Ensure errors from cleanUp are uncaught.
+            new Future.sync(() { cleanUp(value); });
+          }
+          if (remaining == 0 && !eagerError) {
+            result._completeError(error, stackTrace);
+          }
         }
       }, onError: handleError);
     }
@@ -479,8 +502,13 @@ abstract class Future<T> {
   Future<T> whenComplete(action());
 
   /**
-   * Creates a [Stream] that sends [this]' completion value, data or error, to
-   * its subscribers. The stream closes after the completion value.
+   * Creates a [Stream] containing the result of this future.
+   *
+   * The stream will produce single data or error event containing the
+   * completion result of this future, and then it will close with a
+   * done event.
+   *
+   * If the future never completes, the stream will not produce any events.
    */
   Stream<T> asStream();
 
@@ -512,12 +540,10 @@ class TimeoutException implements Exception {
   TimeoutException(this.message, [this.duration]);
 
   String toString() {
-    if (message != null) {
-      if (duration != null) return "TimeoutException after $duration: $message";
-      return "TimeoutException: $message";
-    }
-    if (duration != null) return "TimeoutException after $duration";
-    return "TimeoutException";
+    String result = "TimeoutException";
+    if (duration != null) result = "TimeoutException after $duration";
+    if (message != null) result = "$result: $message";
+    return result;
   }
 }
 
@@ -595,6 +621,29 @@ abstract class Completer<T> {
    * known to be the final result of another asynchronous operation. If in doubt
    * use the default [Completer] constructor.
    *
+   * Using an normal, asynchronous, completer will never give the wrong
+   * behavior, but using a synchronous completer incorrectly can cause
+   * otherwise correct programs to break.
+   *
+   * An asynchronous completer is only intended for optimizing event
+   * propagation when one asynchronous event immediately triggers another.
+   * It should not be used unless the calls to [complete] and [completeError]
+   * are guaranteed to occur in places where it won't break `Future` invariants.
+   *
+   * Completing synchronously means that the completer's future will be
+   * completed immediately when calling the [complete] or [completeError]
+   * method on a synchronous completer, which also calls any callbacks
+   * registered on that future.
+   *
+   * Completing synchronously must not break the rule that when you add a
+   * callback on a future, that callback must not be called until the code
+   * that added the callback has completed.
+   * For that reason, a synchronous completion must only occur at the very end
+   * (in "tail position") of another synchronous event,
+   * because at that point, completing the future immediately is be equivalent
+   * to returning to the event loop and completing the future in the next
+   * microtask.
+   *
    * Example:
    *
    *     var completer = new Completer.sync();
@@ -618,10 +667,13 @@ abstract class Completer<T> {
   factory Completer.sync() => new _SyncCompleter<T>();
 
   /** The future that will contain the result provided to this completer. */
-  Future get future;
+  Future<T> get future;
 
   /**
    * Completes [future] with the supplied values.
+   *
+   * The value must be either a value of type [T]
+   * or a future of type `Future<T>`.
    *
    * If the value is itself a future, the completer will wait for that future
    * to complete, and complete with the same result, whether it is a success

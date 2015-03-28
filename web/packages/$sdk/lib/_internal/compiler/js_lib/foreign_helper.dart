@@ -4,6 +4,8 @@
 
 library _foreign_helper;
 
+import 'dart:_js_embedded_names' show JsGetName;
+
 /**
  * Emits a JavaScript code fragment parameterized by arguments.
  *
@@ -154,11 +156,6 @@ RAW_DART_FUNCTION_REF(Function function) {}
 void JS_SET_CURRENT_ISOLATE(isolate) {}
 
 /**
- * Creates an isolate and returns it.
- */
-JS_CREATE_ISOLATE() {}
-
-/**
  * Returns the JavaScript constructor function for Dart's Object class.
  * This can be used for type tests, as in
  *
@@ -208,6 +205,9 @@ JS_CURRENT_ISOLATE() {}
 /// Returns the name used for generated function types on classes and methods.
 String JS_SIGNATURE_NAME() {}
 
+/// Returns the name used to tag typedefs.
+String JS_TYPEDEF_TAG() {}
+
 /// Returns the name used to tag function type representations in JavaScript.
 String JS_FUNCTION_TYPE_TAG() {}
 
@@ -242,7 +242,7 @@ String JS_FUNCTION_TYPE_OPTIONAL_PARAMETERS_TAG() {}
 String JS_FUNCTION_TYPE_NAMED_PARAMETERS_TAG() {}
 
 /// Returns the JS name for [name] from the Namer.
-String JS_GET_NAME(String name) {}
+String JS_GET_NAME(JsGetName name) {}
 
 /// Reads an embedded global.
 ///
