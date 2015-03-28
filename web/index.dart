@@ -11,7 +11,7 @@ WebGLRenderer renderer;
 
 Mesh mesh;
 
-bool hideTest = true;
+bool hideTest = false;
 
 void main() {
   init();
@@ -21,12 +21,13 @@ void main() {
 void init() {
   container = new DivElement();
   document.body.append(container);
+  document.body.onClick.listen((e) {
+    hideTest = !hideTest; 
+    createScene();
+    drawLineSegments();
+  });
   
-  scene = new Scene();
-  camera = new PerspectiveCamera(70.0, window.innerWidth / window.innerHeight);
-  camera.position.z = 15.0;
-  
-  scene.add(camera);
+  createScene();
   
   calculateLines();
   drawLineSegments();
@@ -42,11 +43,19 @@ void init() {
     circle.position = new Vector3(intersectionPoint.x, intersectionPoint.y, 0.0);
     scene.add(circle);
   }
-
+  
   renderer = new WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
 
   container.append(renderer.domElement);
+}
+
+void createScene() {
+  scene = new Scene();
+  camera = new PerspectiveCamera(70.0, window.innerWidth / window.innerHeight);
+  camera.position.z = 15.0;
+  
+  scene.add(camera);
 }
 
 void render(double dt) {
@@ -187,6 +196,8 @@ List<LineSegment> getPossibleIntersectorsWithHorizon(LineSegment line) {
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
+  Lines.clear();
+  intersectionPoints.clear();
   const int lineCount = 3;
   Math.Random rand = new Math.Random();
   // Start w/ two lines - set up manually
@@ -233,16 +244,14 @@ void calculateLines() {
         // Determine if line should be visible or hidden: compare y of start points
         bool aboveHorizon = line.start.y > intersector.start.y;
         
-        List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
+//        List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
         //List<LineSegment> horizonSplitLines = Horizon.split(intersector, intersectionPoint);
-
-          //List<LineSegment> split = line.split(intersectionPoint);
-          //List<LineSegment> horizonSplit = line.split(intersectionPoint);
+        
         // If line start is above horizon start, line should be visible and replace horizon line
         if (aboveHorizon) {
-          newSplitLines[0].hidden = true;
+//          newSplitLines[0].hidden = true;
         } else { // If line start is below horizon start, line should be invisible. 
-          newSplitLines[1].hidden = true;
+//          newSplitLines[1].hidden = true;
         }
       } else {
         // If line has no intersections, entire line should be visible or invisible. Determine which.
@@ -250,6 +259,7 @@ void calculateLines() {
         if (aboveHorizon) {
           line.hidden = true;
         } else {
+          
         }
       }
     }
