@@ -246,14 +246,17 @@ void calculateLines() {
         // Determine if line should be visible or hidden: compare y of start points
         bool aboveHorizon = line.start.y > intersector.start.y;
         print('line ${i}, y: ${line.start.y}, above horizon: ${aboveHorizon.toString()}');
-//        List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
+        List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
+        i++;
         //List<LineSegment> horizonSplitLines = Horizon.split(intersector, intersectionPoint);
         
         // If line start is above horizon start, line should be visible and replace horizon line
         if (aboveHorizon) {
-//          newSplitLines[0].hidden = true;
-        } else { // If line start is below horizon start, line should be invisible. 
-//          newSplitLines[1].hidden = true;
+          newSplitLines[0].hidden = false;
+          newSplitLines[1].hidden = true;
+        } else { // If line start is below horizon start, line should be invisible.
+          newSplitLines[0].hidden = true;
+          newSplitLines[1].hidden = false;
         }
         continue;
       }
