@@ -104,6 +104,7 @@ class LineGroup {
   
   List<LineSegment> split(LineSegment line, Vector2 intersectionPoint) {
     int index = Line.indexOf(line);
+    if (index == -1) return null;
     List<LineSegment> splitLines = line.split(intersectionPoint);
     
     // TODO: Remove helper functions if this is the only place they're used
@@ -241,19 +242,24 @@ void calculateLines() {
         // New line has intersected with horizon
         // Determine if line should be visible or hidden: compare y of start points
         bool aboveHorizon = line.start.y > intersector.start.y;
-        print('line ${i}, y: ${line.start.y}, above horizon: ${aboveHorizon.toString()}');
         List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
+        if (newSplitLines == null) continue;
         i++;
-        //List<LineSegment> horizonSplitLines = Horizon.split(intersector, intersectionPoint);
+        
+        // Split horizon as well
+        List<LineSegment> horizonSplitLines = Horizon.split(intersector, intersectionPoint);
         
         // If line start is above horizon start, line should be visible and replace horizon line
         if (aboveHorizon) {
           newSplitLines[0].hidden = false;
           newSplitLines[1].hidden = true;
+          // Replace 
         } else { // If line start is below horizon start, line should be invisible.
           newSplitLines[0].hidden = true;
           newSplitLines[1].hidden = false;
         }
+        
+        // TODO: why continue here? (probably just remove)
         continue;
       }
     }
@@ -276,6 +282,27 @@ void calculateLines() {
       }
       if (!aboveHorizon) {
         line.hidden = true;
+      } else {
+        // Replace horizon with this line
+        int horizonStartIndex = -1;
+        int horizonEndIndex = -1;
+        for (int j = 0; j < Horizon.length; j++) {
+          var horizonLine = Horizon[j];
+          if (horizonLine.start.x == line.start.x) {
+            horizonStartIndex = j;
+          }
+          if (horizonLine.end.x == line.end.x) {
+            horizonEndIndex = j;
+          }
+        }
+        print('Non-intersecting line with index ${i}, above horizon. Horizon start index: ${horizonStartIndex}, end index: ${horizonEndIndex}');
+        
+        // TODO: Fix with intersecting lines first
+//        for (int j = horizonStartIndex; j <= horizonEndIndex; j++) {
+//          print('Replacing horizon');
+//          Horizon.removeAt(j);
+//        }
+//        Horizon.insert(horizonStartIndex, line);
       }
     }
   }
@@ -283,7 +310,7 @@ void calculateLines() {
 
 void drawLineSegments() {
   for (int i = 0; i < Lines.length; i++) {
-    var material = new LineBasicMaterial(linewidth: 100.0, color: (i == 0 ? 0xff0000 : 0x0077dd));
+    var material = new LineBasicMaterial(linewidth: 100.0, color: (i % 2 == 0 ? 0xff0000 : 0x0077dd));
     var geometry = new Geometry();
     bool done = false;
     int counter = 0;
@@ -315,4 +342,15 @@ void drawLineSegments() {
     var line = new Line(geometry, material);
     scene.add(line);
   }
+  
+  // Draw horizon a bit above
+  var material = new LineBasicMaterial(linewidth: 100.0, color: (0x00ff00));
+  var geometry = new Geometry();
+  for (int i = 0; i < Horizon.length; i++) {
+    LineSegment lineSegment = Horizon[i];
+    geometry.vertices.add(new Vector3(lineSegment.start.x, lineSegment.start.y + 5, 0.0));
+    geometry.vertices.add(new Vector3(lineSegment.end.x, lineSegment.end.y + 5, 0.0));
+  }
+  var line = new Line(geometry, material);
+  scene.add(line);
 }
