@@ -236,14 +236,16 @@ void calculateLines() {
     LineSegment line = b.Line[i];
     List<LineSegment> possibleIntersectors = getPossibleIntersectorsWithHorizon(line);
     // TODO: Break and redo after intersection and split
+    bool intersected = false;
     for (LineSegment intersector in possibleIntersectors) {
       Vector2 intersectionPoint = intersects(line, intersector);
       if (intersectionPoint != null) {
+        intersected = true;
         intersectionPoints.add(intersectionPoint);
         // New line has intersected with horizon
         // Determine if line should be visible or hidden: compare y of start points
         bool aboveHorizon = line.start.y > intersector.start.y;
-        
+        print('line ${i}, y: ${line.start.y}, above horizon: ${aboveHorizon.toString()}');
 //        List<LineSegment> newSplitLines = b.split(line, intersectionPoint);
         //List<LineSegment> horizonSplitLines = Horizon.split(intersector, intersectionPoint);
         
@@ -253,14 +255,28 @@ void calculateLines() {
         } else { // If line start is below horizon start, line should be invisible. 
 //          newSplitLines[1].hidden = true;
         }
-      } else {
-        // If line has no intersections, entire line should be visible or invisible. Determine which.
-        bool aboveHorizon = line.start.y > intersector.start.y;
-        if (!aboveHorizon) {
-          line.hidden = true;
-        } else {
-          
+        continue;
+      }
+    }
+
+    if (!intersected) 
+    {
+      // If line has no intersections, entire line should be visible or invisible. Determine which.
+      // TODO: Messy
+      bool aboveHorizon = false;
+      for (LineSegment intersector in possibleIntersectors) {
+        if (intersector.start.x == line.start.x) {
+          aboveHorizon = line.start.y > intersector.start.y;
+        } else if (intersector.start.x == line.end.x) {
+          aboveHorizon = line.end.y > intersector.start.y;
+        } else if (intersector.end.x == line.start.x) {
+          aboveHorizon = line.start.y > intersector.end.y;
+        } else if (intersector.end.x == line.end.x) {
+          aboveHorizon = line.end.y > intersector.end.y;
         }
+      }
+      if (!aboveHorizon) {
+        line.hidden = true;
       }
     }
   }
