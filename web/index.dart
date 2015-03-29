@@ -211,7 +211,11 @@ void calculateLines() {
   }
 
   Lines.add(a);
-  Horizon = a;
+  
+  for (LineSegment line in a.Line) {
+    Horizon.add(new LineSegment(line.start, line.end));
+  }
+  //Horizon = a;
   
   LineGroup b = new LineGroup();
   from = new Vector2(-16.0, 3.0 * rand.nextDouble());
@@ -253,10 +257,12 @@ void calculateLines() {
         if (aboveHorizon) {
           newSplitLines[0].hidden = false;
           newSplitLines[1].hidden = true;
+          //Horizon.Line[Horizon.Line.indexOf(horizonSplitLines[0])] = newSplitLines[0];
           // Replace 
         } else { // If line start is below horizon start, line should be invisible.
           newSplitLines[0].hidden = true;
           newSplitLines[1].hidden = false;
+          //Horizon.Line[Horizon.Line.indexOf(horizonSplitLines[1])] = newSplitLines[1];
         }
         
         // TODO: why continue here? (probably just remove)
