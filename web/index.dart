@@ -198,30 +198,27 @@ LineGroup Horizon = new LineGroup();
 void calculateLines() {
   Lines.clear();
   intersectionPoints.clear();
-  const int lineCount = 3;
+  const int lineCount = 30;
   Math.Random rand = new Math.Random();
   // Start w/ two lines - set up manually
   LineGroup a = new LineGroup();
-  Vector2 from = new Vector2(-6.0, 3.0 * rand.nextDouble());
+  Vector2 from = new Vector2(-16.0, 3.0 * rand.nextDouble());
   for (int i = 0; i < lineCount; i++) {
-    Vector2 to = new Vector2(i - 5.0, 3.0 * rand.nextDouble());
+    Vector2 to = new Vector2(i - 15.0, 3.0 * rand.nextDouble());
     a.add(new LineSegment(from, to));
     from = to;
   }
-//  a.add(new LineSegment(new Vector2(-2.0, 1.0), new Vector2(0.0, -1.0)));
-//  a.add(new LineSegment(new Vector2(0.0, -1.0), new Vector2(2.0, 1.0)));
+
   Lines.add(a);
   Horizon = a;
   
   LineGroup b = new LineGroup();
-  from = new Vector2(-6.0, 3.0 * rand.nextDouble());
+  from = new Vector2(-16.0, 3.0 * rand.nextDouble());
   for (int i = 0; i < lineCount; i++) {
-    Vector2 to = new Vector2(i - 5.0, 3.0 * rand.nextDouble());
+    Vector2 to = new Vector2(i - 15.0, 3.0 * rand.nextDouble());
     b.add(new LineSegment(from, to));
     from = to;
   }
-  //b.add(new LineSegment(new Vector2(-2.0, -1.0), new Vector2(0.0, 1.0)));
-  //b.add(new LineSegment(new Vector2(0.0, 1.0), new Vector2(2.0, -1.0)));
   Lines.add(b);
 
   // On intersect, remove line and add two new lines with start/end at intersect position.
@@ -232,7 +229,6 @@ void calculateLines() {
   // Compare with horizon
   //for (LineSegment line in b.Line) {
   for (int i = 0; i < b.Line.length; i++) {
-    if (i > 50) break;
     LineSegment line = b.Line[i];
     List<LineSegment> possibleIntersectors = getPossibleIntersectorsWithHorizon(line);
     // TODO: Break and redo after intersection and split
