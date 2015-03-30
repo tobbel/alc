@@ -194,12 +194,13 @@ List<LineSegment> getPossibleIntersectorsWithHorizon(LineSegment line) {
   return possibleIntersectors;
 }
 
+Map<int, LineSegment> horizonReplacementLines = new Map<int, LineSegment>();
 List<LineGroup> Lines = new List<LineGroup>();
 LineGroup Horizon = new LineGroup();
 void calculateLines() {
   Lines.clear();
   intersectionPoints.clear();
-  const int lineCount = 30;
+  const int lineCount = 3;
   Math.Random rand = new Math.Random();
   // Start w/ two lines - set up manually
   LineGroup a = new LineGroup();
@@ -257,16 +258,15 @@ void calculateLines() {
         if (aboveHorizon) {
           newSplitLines[0].hidden = false;
           newSplitLines[1].hidden = true;
+          horizonReplacementLines[Horizon.Line.indexOf(horizonSplitLines[0])] = newSplitLines[0];
           //Horizon.Line[Horizon.Line.indexOf(horizonSplitLines[0])] = newSplitLines[0];
           // Replace 
         } else { // If line start is below horizon start, line should be invisible.
           newSplitLines[0].hidden = true;
           newSplitLines[1].hidden = false;
+          horizonReplacementLines[Horizon.Line.indexOf(horizonSplitLines[1])] = newSplitLines[1];
           //Horizon.Line[Horizon.Line.indexOf(horizonSplitLines[1])] = newSplitLines[1];
         }
-        
-        // TODO: why continue here? (probably just remove)
-        continue;
       }
     }
 
@@ -304,13 +304,20 @@ void calculateLines() {
         print('Non-intersecting line with index ${i}, above horizon. Horizon start index: ${horizonStartIndex}, end index: ${horizonEndIndex}');
         
         // TODO: Fix with intersecting lines first
-//        for (int j = horizonStartIndex; j <= horizonEndIndex; j++) {
-//          print('Replacing horizon');
-//          Horizon.removeAt(j);
-//        }
-//        Horizon.insert(horizonStartIndex, line);
+        for (int j = horizonStartIndex; j <= horizonEndIndex; j++) {
+          print('Replacing horizon');
+          //Horizon.removeAt(j);
+          horizonReplacementLines[j] = line;
+        }
+        //Horizon.insert(horizonStartIndex, line);
       }
     }
+    
+    // Replace lines in horizon
+    horizonReplacementLines.forEach((index, lineSegment) {
+      Horizon.Line[index] = lineSegment;
+    });
+    // Clear horizonReplacementLines 
   }
 }
 
@@ -357,6 +364,7 @@ void drawLineSegments() {
     geometry.vertices.add(new Vector3(lineSegment.start.x, lineSegment.start.y + 5, 0.0));
     geometry.vertices.add(new Vector3(lineSegment.end.x, lineSegment.end.y + 5, 0.0));
   }
+  print('Drew Horizon, ${Horizon.length} segments');
   var line = new Line(geometry, material);
   scene.add(line);
 }
