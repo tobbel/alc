@@ -272,6 +272,7 @@ void calculateLines() {
 
     if (!intersected) 
     {
+      print('line did not intersect');
       // If line has no intersections, entire line should be visible or invisible. Determine which.
       // TODO: Messy
       bool aboveHorizon = false;
@@ -286,6 +287,7 @@ void calculateLines() {
           aboveHorizon = line.end.y > intersector.end.y;
         }
       }
+      print('aboveHorizon: ${aboveHorizon}');
       if (!aboveHorizon) {
         line.hidden = true;
       } else {
@@ -307,6 +309,7 @@ void calculateLines() {
         for (int j = horizonStartIndex; j <= horizonEndIndex; j++) {
           print('Replacing horizon');
           //Horizon.removeAt(j);
+          // This does not work; if an entire line is above horizon replacement does not happen for some reason
           horizonReplacementLines[j] = line;
         }
         //Horizon.insert(horizonStartIndex, line);
@@ -323,7 +326,7 @@ void calculateLines() {
 
 void drawLineSegments() {
   for (int i = 0; i < Lines.length; i++) {
-    var material = new LineBasicMaterial(linewidth: 100.0, color: (i % 2 == 0 ? 0xff0000 : 0x0077dd));
+    
     var geometry = new Geometry();
     bool done = false;
     int counter = 0;
@@ -335,6 +338,7 @@ void drawLineSegments() {
       if (counter >= Lines[i].length)
         break;
       
+      var material = new LineBasicMaterial(linewidth: 10.0, color: (i % 2 == 0 ? (counter % 2 == 0 ? 0xff0000 : 0x660000) : (counter % 2 == 0 ? 0x0077dd : 0x004488)));
       LineSegment line = Lines[i][counter];
       if (!hideTest) {
         geometry.vertices.add(new Vector3(line.start.x, line.start.y, 0.0));
@@ -352,6 +356,7 @@ void drawLineSegments() {
       counter++;
     }
 
+    var material = new LineBasicMaterial(linewidth: 10.0, color: (i % 2 == 0 ? (counter % 2 == 0 ? 0xff0000 : 0x660000) : (counter % 2 == 0 ? 0x0077dd : 0x004488)));
     var line = new Line(geometry, material);
     scene.add(line);
   }
@@ -364,7 +369,6 @@ void drawLineSegments() {
     geometry.vertices.add(new Vector3(lineSegment.start.x, lineSegment.start.y + 5, 0.0));
     geometry.vertices.add(new Vector3(lineSegment.end.x, lineSegment.end.y + 5, 0.0));
   }
-  print('Drew Horizon, ${Horizon.length} segments');
-  var line = new Line(geometry, material);
-  scene.add(line);
+  var horizonLine = new Line(geometry, material);
+  scene.add(horizonLine);
 }
